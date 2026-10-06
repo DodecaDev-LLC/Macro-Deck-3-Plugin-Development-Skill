@@ -68,6 +68,9 @@ python3 scripts/build_release.py                      # validate and build dist/
 
 ## Licences
 
+This repository's own work (the skill's instructions, cheatsheet, scripts, workflow and evals) is
+released under the [MIT License](LICENSE), Copyright (c) 2026 DodecaDev LLC.
+
 The bundled Macro Deck documentation is licensed under the Apache License 2.0 and the template and samples
 under the MIT License, both Copyright (c) Macro Deck Contributors. Their licence texts and Macro Deck's NOTICE
 ship inside the skill in `references/licenses/`, and `references/SOURCES.md` describes what was changed. The
