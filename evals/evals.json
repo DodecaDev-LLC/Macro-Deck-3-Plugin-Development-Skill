@@ -1,0 +1,26 @@
+{
+  "skill_name": "macro-deck-plugin-dev",
+  "evals": [
+    {
+      "id": 1,
+      "name": "scaffold-key-light-plugin",
+      "prompt": "I want to build a Macro Deck 3 plugin for my Elgato-style key light (it has a tiny HTTP API on the LAN: GET /light returns {\"on\":true,\"brightness\":40}, PUT /light with the same JSON sets it). Call it \"Key Light Control\", id com.dodecadev.key-light, publisher \"dodecadev\", repo https://github.com/dodecadev/key-light. I need: a toggle on/off action that shows on/off on the button, a set-brightness action with a 0-100 slider, a brightness variable I can show on the deck, and the light's IP address entered once during setup. Please create the whole project in ./key-light with tests. I don't have the macrodeck-plugin CLI installed on this machine so just write the files.",
+      "expected_output": "A complete Macro Deck 3 plugin solution: manifest.json, macrodeck-build.json, csproj, Program.cs with UseMacroDeckLogging/UseLocalization/RegisterIntegration, an integration implementing IVariableProvider and IConfigFlowProvider, toggle action implementing IStateProviderActionDefinition, brightness slider action, Strings.resx, PluginTestHarness tests.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "add-webhook-action",
+      "prompt": "Here's my existing Macro Deck 3 plugin in ./stream-tools (copy it into your output folder and edit the copy). Add a \"Send webhook\" action: URL field, a GET/POST choice, a JSON body field that should only show up when POST is picked, and an optional bearer token that must be stored as a secret. Use HttpClient properly (DI, not new HttpClient()). If the server returns non-2xx or is unreachable the button should show it failed, not pretend it worked. Add tests too.",
+      "expected_output": "The copied plugin with a new action class using ActionParameter.Url/Choice/Json(or MultilineText)/Secret, OnlyWhen on the body, a typed or factory HttpClient registered in Program.cs, ActionResult.Failed with ActionErrorCodes on failure, cancellation token forwarded, Strings.resx keys for every label, and PluginTestHarness tests.",
+      "files": ["inputs/stream-tools"]
+    },
+    {
+      "id": 3,
+      "name": "debug-pairing-and-publish",
+      "prompt": "My plugin in ./deck-timer runs fine with `macrodeck-plugin run --stub-host` but when I run it against the actual Macro Deck desktop app I never get a pairing prompt, it just sits there. Also `macrodeck-plugin validate --level publication` complains about publisher and repository. My GitHub is github.com/dodecadev/deck-timer and my Creator Portal username is dodecadev. How do I fix both, and then how do I actually get this into the Macro Deck Store? Fix what you can in the project (copy it to your output folder first), write me a release checklist as RELEASE.md, and add whatever GitHub workflow file I need.",
+      "expected_output": "Explains Developer Mode / host URL / pairing troubleshooting, fixes manifest publisher.name=dodecadev and repository URL, adds .github/workflows/release.yml using Macro-Deck-App/GitHub-Actions publish-plugin.yml@v1 with id-token: write, no signing keys, RELEASE.md covering validate --level publication, conformance test, Store gate policy fetch, Creator Portal project id matching manifest id, release tag versioning.",
+      "files": ["inputs/deck-timer"]
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+name: Sync docs and release
+
+on:
+  schedule:
+    # Daily at 11:17 UTC (about 6 am in Chicago). Off the hour, because :00 is when GitHub is busiest.
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: "Release even if the upstream docs did not change"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - "macro-deck-plugin-dev/**"
+      - "scripts/build_release.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-and-release
+  cancel-in-progress: false
+
+jobs:
+  sync-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pull the latest Macro Deck docs, template and samples
+        if: github.event_name != 'push'
+        run: python3 macro-deck-plugin-dev/scripts/sync_docs.py
+
+      - name: Decide whether to release
+        id: changes
+        run: |
+          # The upstream Macro Deck repo gets commits that never touch the docs, which only move the commit
+          # column in SOURCES.md. Ignore that file on its own so those days do not produce a release.
+          real_changes="$(git status --porcelain -- macro-deck-plugin-dev | grep -v 'references/SOURCES.md' || true)"
+          if [ -z "$real_changes" ]; then
+            git checkout -- macro-deck-plugin-dev/references/SOURCES.md 2>/dev/null || true
+          fi
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.force_release }}" = "true" ] || [ -n "$real_changes" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Upstream docs unchanged; nothing to release."
+          fi
+          echo "synced=$([ -n "$real_changes" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Check the scripts still run
+        if: steps.changes.outputs.release == 'true'
+        run: |
+          python3 -m py_compile macro-deck-plugin-dev/scripts/*.py scripts/*.py
+          python3 macro-deck-plugin-dev/scripts/store_gate.py --help > /dev/null
+
+      - name: Validate and build
+        if: steps.changes.outputs.release == 'true'
+        id: build
+        run: |
+          version="$(date -u +%Y.%m.%d).${{ github.run_number }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          python3 scripts/build_release.py --out dist --version "$version"
+
+      - name: Commit the synced references
+        if: steps.changes.outputs.synced == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add macro-deck-plugin-dev
+          git commit -m "Sync Macro Deck docs, template and samples (${{ steps.build.outputs.version }})"
+          git push
+
+      - name: Publish the release
+        if: steps.changes.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.build.outputs.version }}"
+          gh release create "$tag" \
+            dist/macro-deck-plugin-dev.zip dist/macro-deck-plugin-dev.skill \
+            --target "$(git rev-parse HEAD)" \
+            --title "Macro Deck plugin dev skill $tag" \
+            --notes-file dist/NOTES.md \
+            --latest
