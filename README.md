@@ -22,6 +22,11 @@ Download `macro-deck-plugin-dev.zip` from the [latest release](https://github.co
   menu or publish it to your organization.
 - **Claude Code:** unzip into `~/.claude/skills/` (every project) or into a project's `.claude/skills/`
   (that project, shared through git).
+- **Any coding agent that can run commands:** paste this prompt and it installs the latest release:
+
+  ```text
+  Install the Macro Deck 3 plugin development skill: download https://github.com/DodecaDev-LLC/Macro-Deck-3-Plugin-Development-Skill/releases/latest/download/macro-deck-plugin-dev.zip, unzip it into ~/.claude/skills/ (replacing any existing macro-deck-plugin-dev folder), and confirm ~/.claude/skills/macro-deck-plugin-dev/SKILL.md exists.
+  ```
 
 Then just ask, for example: *"Scaffold a Macro Deck plugin that controls my Hue lights"*, *"Add a webhook
 action to my plugin"*, or *"Why does my plugin never get a pairing prompt?"*.
