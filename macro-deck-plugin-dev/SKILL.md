@@ -120,6 +120,24 @@ all of it before changing anything.
    release). The release tag sets the version. Never add signing keys or a manual upload: the Creator Portal
    signs server-side. Creator Portal steps are in `references/docs/creator-portal.md`.
 
+Creator Portal behaviour learned from real releases, which the docs leave out or understate:
+
+- **Pin `cli-version` in the release workflow.** Its default ("newest prerelease") has resolved to a CLI
+  below the Store minimum (3.0.0-beta.11 against a minimum of 3.0.0-beta.15), and the upload is then
+  refused. Set it to the minimum from the dependency policy, or later.
+- **`publisher.name` is the portal's display name, not the legal name.** An Organization called
+  "DodecaDev" refuses a manifest saying "DodecaDev LLC". Ask the user to read the name off the portal.
+- **Every upload is a new build, even for a version that already has one.** A second `1.0.0` upload is
+  accepted as another build; nothing is replaced. Re-running a failed upload job is fine.
+- **Uploads are refused (409) while a submission is In Review.** A version in review cannot switch to
+  another build from the GitHub side.
+- **A build in review cannot be discarded directly.** Where the discard option normally is, the build shows
+  only an "In Review" badge. Discard its release first (portal **Releases**, *Discard version*); the build
+  can then be discarded.
+- **Review expects screenshots of the plugin in use** (a deck with its buttons, its actions being
+  configured, its setup flow) **and an icon that names the integration visually**, not a generic symbol.
+  A third-party logo still needs its owner's permission, so prefer a recognisable product shape.
+
 ### E. Not .NET, or protocol-level work
 
 A plugin can be written in any language that speaks the plugin protocol, and some tasks (custom hosts,
