@@ -2,7 +2,8 @@
 """Validate the skill against Claude's upload limits and build the release files.
 
 Writes to --out (default dist/):
-  macro-deck-plugin-dev.zip    upload this in claude.ai (Customize > Skills > Upload a skill)
+  macro-deck-plugin-dev.zip    upload this in claude.ai (Customize > Skills > Upload a skill); carries a
+                               generated VERSION file with the release tag, read by scripts/check_update.py
   macro-deck-plugin-dev.skill  same bytes; opens with a Save button where Claude offers one
   NOTES.md                     release notes built from references/SOURCES.md
 
@@ -97,6 +98,11 @@ def main() -> None:
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             zf.writestr(info, path.read_bytes())
+        # Generated rather than committed, so it always equals the tag the release is published under.
+        info = zipfile.ZipInfo(str(Path(SKILL.name) / "VERSION"), date_time=(2020, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = 0o644 << 16
+        zf.writestr(info, f"v{args.version}\n" if args.version != "dev" else "dev\n")
     (args.out / f"{SKILL.name}.skill").write_bytes(archive.read_bytes())
 
     sources = (SKILL / "references" / "SOURCES.md").read_text(encoding="utf-8")

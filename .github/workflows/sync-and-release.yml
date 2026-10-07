@@ -59,6 +59,7 @@ jobs:
         run: |
           python3 -m py_compile macro-deck-plugin-dev/scripts/*.py scripts/*.py
           python3 macro-deck-plugin-dev/scripts/store_gate.py --help > /dev/null
+          python3 macro-deck-plugin-dev/scripts/check_update.py --help > /dev/null
 
       - name: Validate and build
         if: steps.changes.outputs.release == 'true'
