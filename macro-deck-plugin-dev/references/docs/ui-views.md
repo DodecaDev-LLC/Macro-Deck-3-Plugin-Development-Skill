@@ -1768,6 +1768,10 @@ appearance actions to reach them.
   when your view passes that value on to its root node (see
   [widget types](https://docs.macro-deck.app/ui/views/widget-types/#standard-appearance)). `All` does not include it, and on its own it
   builds nothing.
+- Colour variables are opt-in too. Add `UiWidgetAppearanceFields.ColorVariables` and every colour field of
+  the section offers the **Color** | **Variable** switch described in
+  [Offering a colour variable](#offering-a-colour-variable). `All` does not include it, and on its own it
+  builds nothing.
 
 ### Offering a transparent colour
 
@@ -1787,6 +1791,29 @@ new UiColorInput
 `transparent` instead of a `#rrggbb` value. Set it only for a value your widget knows how to read: a stack or
 button `background` accepts it, a modifier's does not. Without the flag, or on a Macro Deck release that
 does not know it, the picker offers colours only and the node is serialised exactly as before.
+
+### Offering a colour variable
+
+```csharp
+new UiColorInput { Key = "accentColor", Binding = Bind.To(accent), AllowVariables = true }
+new UiThresholdsInput { Key = "thresholds", Binding = Bind.To(thresholds), AllowVariables = true }
+```
+
+`AllowVariables` adds a **Color** | **Variable** switch to the picker, or to each band's colour, so the user
+can follow a [Color variable](https://docs.macro-deck.app/features/variables/#color-variables) with modifiers instead of a fixed colour.
+The stored value is then a reference string, not a colour:
+
+```text
+{{ vars.primary | color | color_darken: 20 | color_opacity: 70 }}
+```
+
+Your binding receives that string as it is; in a `UiThresholds` it is the band's `color`. Set the flag only
+when your code can take it. When Macro Deck opens your widget's session, the widget data it hands over in
+`UiWidgetSurfaceAttributes.Data` has every reference already resolved to `#rrggbb` or `#rrggbbaa`, or to
+an empty string when the variable is unavailable, so draw your default colour then. A value you read
+anywhere else, such as your own settings or a config flow, still holds the reference: resolve it with
+[`IColorApi`](https://docs.macro-deck.app/features/variables/#resolving-colours-yourself). Without the flag, or on a Macro Deck release
+that does not know it, the picker offers fixed colours only.
 
 ### Colour thresholds
 
@@ -1831,7 +1858,10 @@ The value is a `UiThresholds`, stored and sent as:
 
 Each band runs from its `from` up to the next band's. The first band has no `from` and covers everything
 below the second. Later starts are finite and strictly increasing, so handles never cross. A value carries 1
-to 64 bands with unique, non-empty ids and `#rgb` or `#rrggbb` colours, normalised to lowercase `#rrggbb`. The
+to 64 bands with unique, non-empty ids and `#rgb`, `#rrggbb` or `#rrggbbaa` colours, normalised to lowercase
+`#rrggbb` or `#rrggbbaa`. With [`AllowVariables`](#offering-a-colour-variable) a band's
+colour can also be a colour reference. When its variable is missing or unavailable, that band has no colour
+of its own in the resolved data, so the range falls back to the widget's own colour while the other bands keep theirs. The
 `UiThresholds` constructor throws on anything else, and a `change` that breaks a rule is rejected before it
 reaches your binding.
 
@@ -2111,14 +2141,14 @@ type and write the value to the stored data, under these keys:
 | Key | Property | Value |
 | --- | --- | --- |
 | `border` | `Border`, `BorderColor` | `{ "style": "...", "color": "#rrggbb" }`. `style` is `off`, `static`, `heartbeat`, `breathing`, `blink`, `comet`, `ants`, `hue-shift` or `rgb`; without `color` the ring uses its default colour |
-| `backgroundColor` | `BackgroundColor` | `#rrggbb`, or `transparent` |
+| `backgroundColor` | `BackgroundColor` | `#rrggbb` or `#rrggbbaa`, or `transparent` |
 | `label` | `Label` | The text as entered |
-| `labelColor` | `LabelColor` | `#rrggbb` |
+| `labelColor` | `LabelColor` | `#rrggbb` or `#rrggbbaa` |
 | `fontFaceId` | `Font` | A face id from the host's font catalogue (the `macrodeck.fonts` option source) |
 | `fontSize` | `Font` | Size as a whole-number percentage |
 | `textAlign` | `Font` | `left`, `center` or `right` |
 | `labelPosition` | `Font` | `top`, `center` or `bottom` |
-| `accentColor` | `AccentColor` | `#rrggbb` |
+| `accentColor` | `AccentColor` | `#rrggbb` or `#rrggbbaa` |
 
 `UiWidgetAppearanceKeys` holds the names. Clearing a setting removes its key. Other values of
 `WidgetAppearanceProperty`, such as `Icon`, are ignored for a provider's type.
@@ -2170,6 +2200,9 @@ fields for the same keys.
   `transparent`, Macro Deck also leaves out the tile's own face and shadow, so the folder background shows
   through. The border ring is still drawn. A background of `transparent` on any node below the root, or a
   root that is not a stack or button, keeps the tile face.
+- **A colour can carry alpha.** The actions store `#rrggbbaa` for a translucent colour, including one taken
+  from a [Color variable](https://docs.macro-deck.app/features/variables/#color-variables) when the action ran. Pass it on as it is: a
+  reader draws it translucent.
 - **The label is stored as entered.** It may contain a `{{ ... }}` variable template, which Macro Deck
   renders only for its own Action Button. Show the text as it is, or render it yourself.
 - **Hardware devices read these keys too.** A device plugin receives `label`, `labelColor`,

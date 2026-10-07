@@ -223,6 +223,24 @@ What did **not** need a major:
   non-fatally and the plugin's other capabilities keep working, and a plugin that does not implement
   `ICalendarProvider` never declares it. The host's calendar widget types and the `calendar` trigger
   provider are host-owned additions, not protocol changes.
+- Colour variables added `VariableType.Color`, whose values travel as an ordinary `text` value, and an
+  optional `allowAlpha` field on `ActionParameterDto` (`ActionParameter.AllowAlpha`), all within major `3`.
+  An older host drops a variable definition that declares `Color` and ignores `allowAlpha`. A colour
+  parameter without `allowAlpha` still receives opaque `#rrggbb`, also when the user bound it to a
+  variable. A new optional `hostApiFeatures` list on the session request lets a plugin declare
+  `scripts.input-color`; only then does a Color script input reach it as `color`, every other plugin keeps
+  receiving it as `text` with the hex value. The SDK declares it automatically. See
+  [Color variables](https://docs.macro-deck.app/features/variables/#color-variables).
+- Colour variables are also a one-way step for the host's own data, which no plugin contract covers: once
+  a user variable of type `Color` exists, the persisted user-variables file cannot be read by a Macro Deck
+  release from before `Color`, which then starts without any user variables. Downgrading the host is
+  unsupported from that point; see [Colors from a variable](https://docs.macro-deck.app/guide/tips/#colors-from-a-variable).
+- Resolving colours added the `colors` host api (`resolve`, `watches` and a `colors` `host.state`), the
+  optional `maxColorWatches` field in the protocol descriptor's limits, and `IIntegrationContext.Colors` as
+  a default interface member, so an existing `IIntegrationContext` implementation keeps compiling and
+  loading. An older host answers `CAPABILITY_UNSUPPORTED`, and the SDK falls back to resolving fixed colours
+  locally, giving `null` for a reference and delivering a watch once. See
+  [Resolving colours yourself](https://docs.macro-deck.app/features/variables/#resolving-colours-yourself).
 - Localization moved the **UI model** major, not this one - see [the localization major](#the-localization-major).
 
 **Negotiation happens exactly once**, in `POST /api/plugins/sessions`:
@@ -1049,6 +1067,15 @@ id, so `Sender` is reliable, but it authorizes nothing: any plugin can publish o
 and requests to any handled topic, and handle any topic nobody has claimed yet. Treat a message like any
 other input from another process: validate its payload, and check `Sender` before acting on a command
 where it matters who asked. `host:messaging` is declared, not enforced.
+
+### Colour variables
+
+Any plugin can resolve the current value of any Color variable through
+[`IColorApi`](https://docs.macro-deck.app/features/variables/#resolving-colours-yourself): every global one, and the widget-scoped ones
+of any existing widget, whichever plugin or user created them. It can also watch them for changes. That is
+all the `colors` host api reveals: a variable of any other type, a missing one or an unknown widget
+resolves to no colour, and the api accepts only a colour or a Color variable reference, never an arbitrary
+template, so it cannot be used to read text, numbers or other values. No permission covers it.
 
 ### Video streams
 

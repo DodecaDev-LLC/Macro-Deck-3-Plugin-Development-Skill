@@ -259,6 +259,12 @@ public IReadOnlyList<ActionParameter> Parameters { get; } =
 `Url`, `Icon`, `Image`, `KeyboardSequence`, `KeyboardCombo` and `WidgetTarget`. The executor reads
 values by `Name` from `context.Parameters`.
 
+A `Color` parameter receives `#rrggbb`. The user can bind it to a
+[Color variable](https://docs.macro-deck.app/features/variables/#color-variables); the host resolves it when the action runs and drops
+any alpha, so you still get six digits, or an empty value when the variable is unavailable. Set the parameter's `AllowAlpha` to `true` when your action can use
+transparency: the picker then offers opacity and the value may be `#rrggbbaa`. A Macro Deck release from
+before `AllowAlpha` ignores it.
+
 `OnlyWhen` is presentation only: a hidden parameter keeps what the user typed, is skipped by validation,
 and **is still sent to the executor** - never infer anything from a field being hidden.
 
@@ -1084,7 +1090,8 @@ configures the action, with a partial parameter set, so it must not throw. It al
   failure to your own `unavailable` state tells the user more.
 
 `StatePollInterval` (default two seconds) is a request. The host clamps it and reads less often, or not
-at all, while nothing displays the button. See
+at all, while nothing displays the button. A button that starts being displayed goes back to the requested
+cadence within about a second. See
 [the state-poll window](https://docs.macro-deck.app/reference/capability-parity/#the-state-poll-window).
 
 ### Bridging the poll delay
@@ -1098,11 +1105,16 @@ public async Task<ActionResult> ExecuteAsync(ActionExecutionContext context)
 }
 ```
 
-A button follows its provider within about one poll interval, not instantly. When the action is also
-the button's provider, its executor can return `Success(expectedStateId)` or
+A button follows its provider within about one poll interval, not instantly. When the user presses the
+button and its own provider action succeeds, the host calls `GetActionStateAsync` again right away
+instead of waiting for the next poll. If your target applies the change asynchronously and that read
+still sees the old state, the regular poll picks the change up afterwards.
+
+To show the new state even before that read, the executor can return `Success(expectedStateId)` or
 `Accepted(message, expectedStateId)` to name the state it expects next. The host may show that state
 briefly while it waits for a read to confirm it. The id must be one `GetActionStateAsync` advertises.
-Failures and results without an expected id keep normal polling.
+Failed results get neither, and a flow the host runs on its own (an `onStateChange` flow, a timer, an
+event trigger) keeps normal polling.
 
 ### Over the plugin protocol
 
@@ -1131,7 +1143,8 @@ A `state.update` for the actions kind only brings the next read forward. Test it
 An integration exposes calendars by implementing `ICalendarProvider`. It lists the accounts it can read,
 and for each account returns its calendars, the events in a time range and the full details of one event.
 Macro Deck merges the accounts of every provider, so the user's widgets, triggers and the **Join Meeting**
-action work with your service next to Google Calendar without any further code.
+action work with your service next to the built-in Google Calendar and Outlook Calendar providers without any
+further code.
 
 Connecting an account is not part of this contract. Signing in, storing tokens and asking the user to
 sign in again belong to your [setup flow](https://docs.macro-deck.app/features/setup-flows/) and your
@@ -1305,6 +1318,8 @@ offers for calendars. You declare none of it:
   meeting link.
 - The **Join Meeting** action, which opens the meeting link of the event that is running or about to start
   on the computer running Macro Deck.
+- The **Refresh Calendars** action, which reads every provider's accounts right away instead of waiting
+  for the next update.
 
 The [user guide](https://docs.macro-deck.app/guide/concepts/#calendar-widget) describes them from the user's side. Do not
 build your own versions of these. If your service offers more, such as accepting an invitation, add
@@ -1664,7 +1679,12 @@ device stays registration-only forever.
   background transparent, its `Appearance.BackgroundColor` is null, the same as a widget with no colour of
   its own: draw the folder background behind that key, or your own default where there is none.
   `Layout.BackgroundColor` carries the folder background as the user stored it, which can be a CSS colour
-  such as `rgba(...)` or the literal `transparent` rather than `#rrggbb`.
+  such as `rgb(...)` or the literal `transparent` rather than `#rrggbb`.
+- **Two kinds of colour arrive flattened to an opaque `#rrggbb`:** one that follows a
+  [Color variable](https://docs.macro-deck.app/features/variables/#color-variables), resolved to its current value, and one stored as
+  translucent, such as `rgba(...)` or `#rrggbbaa` below full opacity, with the alpha dropped. This applies to the layout and widget
+  colours alike, and the surface is rebuilt when a referenced variable changes. Every other colour arrives
+  exactly as stored.
 
 ### Reporting interactions
 
@@ -4795,7 +4815,7 @@ anything else with `with { ... }`.
 | --- | --- | --- |
 | `Name` | Variable name in templates. | `"weather_temperature"` |
 | `Id` | Local id passed to `ReadAsync` / `SetValueAsync`. Stable once shipped. | `"temperature"` |
-| `Type` | `Text`, `Numeric` or `Boolean`. | `VariableType.Numeric` |
+| `Type` | `Text`, `Numeric`, `Boolean` or `Color` - see [Color variables](#color-variables). | `VariableType.Numeric` |
 | `DisplayName`, `Description` | Localized text shown in the variable picker. | `Strings.Variables.Temperature()` |
 | `Unit` | Symbol shown next to the value, reachable as `vars.x.unit`. | `"°C"`, `"%"`, `"GB"` |
 | `SemanticKind` | How the host formats it - see below. | `VariableSemanticKinds.Percentage` |
@@ -4812,13 +4832,76 @@ anything else with `with { ... }`.
 | `duration` | `s` | `187` | `03:07` |
 | `percentage` | `%` | `12.5` | `12.5 %` |
 | `bytes` | `B` | `1536` | `1.5 KB` |
+| `bytesPerSecond` | `B/s` | `3670016` | `3.5 MB/s` |
 | `none` | `fps` | `60` | `60 fps` |
 
-An unknown kind renders as a plain number with its unit, so naming a newer one is never an error. Use
+An unknown kind renders as a plain number with its unit, so naming a newer one is never an error. A host
+built before `bytesPerSecond` existed shows such a value as `3670016 B/s`, which is why the unit is still
+declared. Use
 `bytes` only for a value that really is in bytes - a value already in GB is `none` with a `GB` unit.
 
 A provider may declare at most `VariableLimits.MaxEagerVariablesPerProvider` (256) eager variables; the
 host keeps the first 256 and logs an error. More than that belongs in [the catalog](#the-variable-catalog).
+
+### Color variables
+
+`VariableType.Color` holds a color. Its value is text, lowercase `#rrggbb` when opaque or `#rrggbbaa` with
+alpha: return it from `ReadAsync` as a string, and expect one in `SetValueAsync`. The host also accepts
+`#rgb`, `#rgba`, `rgb(...)` and `rgba(...)` from you and stores the canonical form; anything else is
+invalid. Over the protocol the value travels as a `text` value, like any string.
+
+Users can bind a widget's colors, folder and profile backgrounds, the accent color and action color
+parameters to a Color variable. See [Colors from a variable](https://docs.macro-deck.app/guide/tips/#colors-from-a-variable) for
+what they see.
+
+A Macro Deck release from before `Color` drops a definition that declares it, with the rest of your
+variables unaffected.
+
+A script input can be a color too, `ScriptInputType.Color` with a value in the same format. A plugin built
+on this SDK announces that it knows the type and sees such an input as `color`; an older plugin sees it as
+`text` carrying the hex value.
+
+#### Resolving colours yourself
+
+Two places hand you colours already resolved: a `Color` [action parameter](https://docs.macro-deck.app/features/actions/) when the
+action runs, and the widget data Macro Deck gives your widget's session. Anywhere else a colour may be a
+reference string such as `{{ vars.primary | color | color_darken: 20 }}`: your own settings, a config or
+setup flow, or a view of your own with
+[`AllowVariables`](https://docs.macro-deck.app/ui/views/widget-configuration/#offering-a-colour-variable). Resolve those through
+`IIntegrationContext.Colors`, an `IColorApi`:
+
+```csharp
+var color = await context.Colors.ResolveAsync(settings.LightColor) ?? "#ffffff";
+
+_colorWatch = await context.Colors.WatchAsync(settings.LightColor, async (color, ct) =>
+	await _lights.SetColorAsync(color ?? "#ffffff", ct));
+
+// later, to stop:
+await _colorWatch.DisposeAsync();
+```
+
+- Both take a fixed colour or a reference and return lowercase `#rrggbb` or `#rrggbbaa`, or `null` for "no
+  colour, use your default": the variable is missing, unavailable or not a `Color`. Pass a `widgetId` to let
+  that widget's own variables shadow global ones; an unknown widget gives `null`.
+- `ColorReference.IsReference(value)` tells a reference from a fixed colour without asking the host.
+- A watch's callback receives the current colour once, then again only when it changes, including to
+  `null`. Watches survive reconnects and are released when the integration is shut down or initialized
+  again; dispose one to stop it earlier. Callbacks run on thread-pool threads.
+- A plugin may hold at most `ProtocolLimits.MaxColorWatches` (1024) watches across its integrations;
+  `WatchAsync` throws `InvalidOperationException` above that.
+- A reference is at most `ProtocolLimits.MaxColorReferenceLength` (1024) characters with at most
+  `MaxColorReferenceSteps` (32) modifiers. A longer value is not a reference.
+- On a Macro Deck release without colour resolution, a fixed colour still resolves locally, a reference
+  gives `null`, and a watch delivers its value once.
+
+In tests, `PluginTestHarness`'s `Context.Colors` is a `FakeColorApi`: seed a value with `Set(value, color)`,
+which also notifies matching watches, and check `ActiveWatchCount`. Over the wire, `MacroDeckTestHost.Colors`
+does the same with `SetAsync`, and `WatchesOf(pluginId)` lists a plugin's watches. Unseeded, a fixed colour
+resolves to its canonical form and a reference to `null`.
+
+```csharp
+await harness.Context.Colors.Set("{{ vars.primary | color }}", "#3366ff");
+```
 
 ### Writable variables
 
@@ -4923,6 +5006,26 @@ reference: `{{ vars.cpu.unit }}`, `{{ vars.room_sensor.room }}`.
 ```liquid
 {% if vars.music_artist.state.is_not_empty %}By {{ vars.music_artist }}{% endif %}
 ```
+
+Color filters derive a shade from a color. The value piped in must be a `Color` variable or a color
+literal; a `Text` variable is refused even when it holds a hex value. `color` reads the value as it is, and
+the result of every filter is `#rrggbb` or `#rrggbbaa`:
+
+```liquid
+{{ vars.primary | color | color_darken: 20 | color_opacity: 70 }}
+{{ "#ff0000" | color_darken: 10 }}
+```
+
+| filter | argument |
+| --- | --- |
+| `color_lighten`, `color_darken` | percent of lightness to add or remove |
+| `color_saturate`, `color_desaturate` | percent of saturation to add or remove |
+| `color_opacity` | the alpha to set, in percent |
+| `color_increase_opacity`, `color_reduce_opacity` | percent to move the alpha toward opaque, or to reduce it by |
+| `color_hue` | degrees to rotate the hue |
+| `color_mix` | another color (`"#ffffff"` or a Color variable such as `vars.other`) and the percent of it to blend in |
+
+A missing, unavailable or invalid color renders as an empty string, which a color field treats as unset.
 
 Because `state` is resolved first, an `Attributes` key named `state` is unreachable. `state` works on
 `vars` references only, not on `event` parameters or script inputs.
@@ -5048,13 +5151,15 @@ a global of the same name; the host refuses an unknown widget id.
 
 `ApplyAsync`'s `Set` also works on provider variables that declare `Write`; `NotEditable` for the rest.
 `Add`, `Toggle` and `Append` are user-variable only, because they compute from the last value the host
-saw. `Unavailable` means the owner accepts writes but could not take this one - retry later.
+saw. A `Color` user variable takes `Set` only, with a value in the formats above. `Unavailable` means the owner accepts writes but could not take this one - retry later.
 
 A user variable can read its value from a file. Without **Allow write-back** it is read-only: every
 operation answers `NotEditable` and the file is left alone. With write-back it behaves like any other
 user variable, and Macro Deck also writes the new value to the file. This needs no new SDK: a plugin built
-against an older one gets the same `NotEditable` it already handles for read-only variables. `CreateAsync`
-always creates a variable that holds its own value.
+against an older one gets the same `NotEditable` it already handles for read-only variables. A user
+variable that renders a template is read-only the same way: every operation answers `NotEditable`, and
+its value changes only when a variable its template reads changes. `CreateAsync` always creates a
+variable that holds its own value.
 
 ## Video streams
 
