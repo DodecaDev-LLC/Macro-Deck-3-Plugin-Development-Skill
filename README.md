@@ -31,6 +31,18 @@ Download `macro-deck-plugin-dev.zip` from the [latest release](https://github.co
 Then just ask, for example: *"Scaffold a Macro Deck plugin that controls my Hue lights"*, *"Add a webhook
 action to my plugin"*, or *"Why does my plugin never get a pairing prompt?"*.
 
+## Updating
+
+An installed copy never updates itself. A new release comes out whenever the Macro Deck docs, template or
+samples change (checked daily) and whenever the skill itself changes. To update, install again:
+
+- **Claude (web, desktop, mobile):** download the latest zip and upload it again under Customize > Skills.
+- **Claude Code and other agents:** paste the install prompt above again. It replaces the existing
+  `macro-deck-plugin-dev` folder with the latest release.
+
+The release tag (`vYYYY.MM.DD.<run>`) tells you how current a copy is; `references/SOURCES.md` inside the
+skill records which upstream commits its docs came from.
+
 ## What's inside
 
 ```
