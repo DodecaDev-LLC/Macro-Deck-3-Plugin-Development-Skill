@@ -131,8 +131,9 @@ Creator Portal behaviour learned from real releases, which the docs leave out or
   accepted as another build; nothing is replaced. Re-running a failed upload job is fine.
 - **Uploads are refused (409) while a submission is In Review.** A version in review cannot switch to
   another build from the GitHub side.
-- **Discarding is ordered: discard the Release (portal **Releases**, *Discard version*) before its build.**
-  A build a release was created from cannot be discarded while that release exists.
+- **A build in review cannot be discarded directly.** Where the discard option normally is, the build shows
+  only an "In Review" badge. Discard its release first (portal **Releases**, *Discard version*); the build
+  can then be discarded.
 - **Review expects screenshots of the plugin in use** (a deck with its buttons, its actions being
   configured, its setup flow) **and an icon that names the integration visually**, not a generic symbol.
   A third-party logo still needs its owner's permission, so prefer a recognisable product shape.
