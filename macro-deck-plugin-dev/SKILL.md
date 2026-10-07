@@ -53,6 +53,18 @@ project, a compiler error or an analyzer contradicts the bundled docs, believe t
 then check the live page. If the network is available and the bundle looks stale (see `SOURCES.md`), you can
 refresh it with `python3 scripts/sync_docs.py`.
 
+## Keeping this skill current
+
+An installed copy never updates itself, and the SDK moves fast. Run
+`python3 <skill-dir>/scripts/check_update.py` once per session, on the first Macro Deck task, and again before
+any packaging or publishing work. It compares the skill's `VERSION` with the latest release and falls back to
+the age of the bundled docs when GitHub cannot be reached. It only reports:
+
+- On `UPDATE AVAILABLE` or `POSSIBLY OUTDATED`, tell the user in one line and point them at the update
+  instructions it prints. Then carry on with the task; do not stop or nag again in the same session.
+- Never update the skill yourself unless the user asks. Updating replaces files in their skills folder.
+- `python3 scripts/sync_docs.py` refreshes only `references/`; an update also brings new guidance in this file.
+
 ## Before you touch code: orient
 
 1. **Find the plugin root**: the directory with `manifest.json`, `macrodeck-build.json` and the `.csproj`.

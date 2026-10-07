@@ -40,8 +40,10 @@ samples change (checked daily) and whenever the skill itself changes. To update,
 - **Claude Code and other agents:** paste the install prompt above again. It replaces the existing
   `macro-deck-plugin-dev` folder with the latest release.
 
-The release tag (`vYYYY.MM.DD.<run>`) tells you how current a copy is; `references/SOURCES.md` inside the
-skill records which upstream commits its docs came from.
+Each release carries a `VERSION` file with its tag (`vYYYY.MM.DD.<run>`), and `references/SOURCES.md` records
+which upstream commits its docs came from. The skill tells the agent to run `scripts/check_update.py`, which
+compares `VERSION` with the latest release and tells you when an update is available. It never updates
+anything by itself.
 
 ## What's inside
 
