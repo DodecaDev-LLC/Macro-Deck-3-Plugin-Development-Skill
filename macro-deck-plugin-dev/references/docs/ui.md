@@ -848,6 +848,8 @@ acceptable fallback.
 | `UiButton.Background` | `#rrggbb` | the reader's accent colour |
 | `UiButton.BorderColor` | `#rrggbb` | the border style supplies its own colour |
 | `UiSlider.LevelColor` | `#rrggbb` | the reader's accent colour |
+| `UiGauge.LevelColor` | `#rrggbb` | the reader's accent colour |
+| `UiGauge.TrackColor` | `#rrggbb` | the reader's tertiary surface colour |
 | `UiChart.Color` | `#rrggbb` | the reader's accent colour |
 | `UiProgressBar.StartColor`, `.EndColor` | `#rrggbb` | the reader's accent colour, each end on its own |
 | `UiRangeBar.StartColor`, `.EndColor` | `#rrggbb` | no fill; the span needs both |
@@ -1125,6 +1127,7 @@ profile's rule decides which of the two a new feature is. [Modifiers](https://do
 | `confirmTitle`, `confirmMessage`, `confirmLabel`, `confirmDanger`, `promptValue` on `button` | Properties | Raises `activate` at once, without asking and without a payload. |
 | `interaction` on `ui.slider` (`relative`) | A property | Ignores it and keeps the absolute drag: a press jumps the level to the pointer, and a tap sends `change`. |
 | `ui.modifier` (padding, opacity, clip, mask, frame), component version 1 | A type | Draws the node's explicit `fallback`; without one, none of the wrapped content (Macro Deck's renderer shows a faint placeholder box). No fallback is invented for you. |
+| `trackColor` on `ui.gauge` | A property | Ignores it and draws the theme's track colour, so the ring still reads. |
 | `shadow`, `strokeColor` and `strokeWidth` on `ui.text` | Properties | Ignores them: keeps its own legibility shadow and draws no outline, so the text still reads. |
 | `spans` on `ui.text` | A property | Ignores it and draws `text`, which the producer keeps the plain equivalent of the spans: the same words, each image as its alt text, on one font and colour. |
 | `overflow` on `ui.stack` (`clip-start`), component version 2 | A property, gated by a component version | Draws the node's `fallback`, because a producer using `clip-start` asks for version 2. Without that ask a version 1 reader ignores the key and shrinks every child into the box. |

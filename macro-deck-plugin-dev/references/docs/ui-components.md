@@ -451,8 +451,8 @@ it takes `MainSize` or `Fill`, and without either it is `0` long. See [Sizing](h
 
 ### Reader behaviour
 
-- **Geometry:** the arc and fill exactly as [`ui.gauge`](https://docs.macro-deck.app/ui/components/gauge/#reader-behaviour) draws them,
-  plus a thumb disc of radius `1.25 * thickness` on the arc at the level, in the primary text colour, ringed
+- **Geometry:** the arc and fill exactly as [`ui.gauge`](https://docs.macro-deck.app/ui/components/gauge/#reader-behaviour) draws them, except that
+  the track always follows the theme, plus a thumb disc of radius `1.25 * thickness` on the arc at the level, in the primary text colour, ringed
   by `0.28 * thickness` in the widget's own background colour.
 - **Interaction only where declared.** A dial with no events is drawn and cannot be touched.
 - **Pointer mapping:** the pointer's angle about the box centre, projected onto the sweep and tracked
@@ -639,6 +639,16 @@ new UiGauge { Key = "battery", Level = 0.4, StartAngle = 0, EndAngle = 360, Thic
 Angles are degrees clockwise from twelve o'clock. The sweep is `EndAngle - StartAngle`, so an end before the
 start runs counterclockwise; its size is clamped to one full turn.
 
+### Track colour
+
+The unfilled track follows the theme unless you set `TrackColor`, for a ring on a custom background:
+
+```csharp
+new UiGauge { Key = "battery", Level = 0.85, StartAngle = 0, EndAngle = 360, LevelColor = "#ffffff", TrackColor = "#3a3a3c" }
+```
+
+A reader from before `trackColor` ignores it and draws the theme's track.
+
 ### Properties
 
 | Property | Values | Default (absent) | Meaning |
@@ -647,10 +657,12 @@ start runs counterclockwise; its size is clamped to one full turn.
 | `StartAngle` (`startAngle`) | `double`, degrees | `-135` | Where the arc begins, clockwise from twelve o'clock. |
 | `EndAngle` (`endAngle`) | `double`, degrees | `135` | Where the arc ends. |
 | `LevelColor` (`levelColor`) | `#rrggbb` | The reader's own accent colour | The filled arc's colour. |
+| `TrackColor` (`trackColor`) | `#rrggbb` | The reader's tertiary surface colour | The unfilled track's colour. |
 | `Thickness` (`thickness`) | length | Left to the reader | The arc's width. |
 | `MainSize` (`mainSize`), `Fill` (`fill`) | - | - | Shared with every leaf - see [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/). |
 
-`LevelColor` is a literal colour, not a theme role - see [Colours and text](https://docs.macro-deck.app/ui/concepts/theming/).
+`LevelColor` and `TrackColor` are literal colours, not theme roles - see [Colours and text](https://docs.macro-deck.app/ui/concepts/theming/).
+[`ui.dial`](https://docs.macro-deck.app/ui/components/dial/) has no `TrackColor`; its track always follows the theme.
 
 ### Events
 
@@ -676,9 +688,9 @@ remarks.
 - The sweep is `endAngle - startAngle`, signed, with its magnitude clamped to `360`.
 - The arc is centred in the box, `thickness` wide, with a centreline radius of
   `(min(width, height) - thickness) / 2` and fully rounded caps.
-- The track covers the whole sweep in the reader's tertiary surface colour. The filled arc runs from the
-  start over `level` of the sweep in `levelColor` or the accent colour; `level` is clamped to `0..1`, and `0`
-  paints no filled arc.
+- The track covers the whole sweep in `trackColor`, or the reader's tertiary surface colour when that is
+  absent. The filled arc runs from the start over `level` of the sweep in `levelColor` or the accent colour;
+  `level` is clamped to `0..1`, and `0` paints no filled arc.
 - A reader that does not know `ui.gauge` draws the node's `fallback`, typically a `ui.range-bar` at the
   same level:
 
@@ -909,7 +921,7 @@ records why it is frozen.
 | `Icon` (`icon`) | a `UiIcons` name | Draws nothing | The glyph. |
 | `Size` (`size`) | length | The box's smaller side | The edge of the square the glyph is drawn in. |
 | `Role` (`role`) | `UiComponentTextRoles` | `primary` | The theme colour; ignored when `Color` is present. |
-| `Color` (`color`) | `#rrggbb` | Uses `Role` | A literal colour overriding `Role`. |
+| `Color` (`color`) | `#rrggbb` or `#rrggbbaa` | Uses `Role` | A literal colour overriding `Role`; the alpha pair makes it translucent. |
 | `MainSize` (`mainSize`), `Fill` (`fill`) | - | - | Shared with every leaf - see [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/). |
 
 ### Events
@@ -2896,10 +2908,10 @@ new UiTextRun
 ```
 
 `Spans` draws styled text and inline images as one paragraph, in place of `Text`. A text span may set its
-own `#rrggbb` colour and weight; anything it leaves out comes from the run. An image span is a square one
-line high, so the line height stays exactly one and the run is as tall as it is without images. While an
-image cannot be shown, its `alt` text is drawn in its place; an image without `alt` is decorative and
-draws nothing.
+own `#rrggbb` or `#rrggbbaa` colour and weight; anything it leaves out comes from the run. An image span is
+a square one line high, so the line height stays exactly one and the run is as tall as it is without
+images. While an image cannot be shown, its `alt` text is drawn in its place; an image without `alt` is
+decorative and draws nothing.
 
 Keep `Text` the plain equivalent of the spans - the same words, with each image as the text it stands for.
 A reader that does not know `spans` draws `Text` instead. A span's text is drawn exactly as given: it is
@@ -2914,6 +2926,16 @@ Color = "#ff8800",                        // a colour the user chose; wins over 
 
 Use `Role` for theme colours and `Color` only for a colour that is data. See
 [Colours and text](https://docs.macro-deck.app/ui/concepts/theming/).
+
+To show the user's colour at a lower emphasis, add alpha as a last pair of hex digits instead of mixing the
+colour with a background you cannot see:
+
+```csharp
+Color = "#ffffffcc",                      // the user's white at 80 % opacity, over any backdrop
+```
+
+A reader from before eight-digit colours draws the `Role` colour instead. See
+[Compatibility](https://docs.macro-deck.app/ui/reference/compatibility/).
 
 ### Localized text
 
@@ -2933,7 +2955,7 @@ A localization reference resolves in each reader's own active language.
 | `MinSize` (`minSize`) | `UiSize` length | Never shrinks; ellipsizes | The floor `Size` may shrink to so the run fits. |
 | `Weight` (`weight`) | `UiComponentTextWeights`: `regular`, `medium`, `semibold`, `bold` | `regular` | The font weight. |
 | `Role` (`role`) | `UiComponentTextRoles`: `primary`, `secondary`, `muted` | `primary` | The semantic colour, ignored when `Color` is set. |
-| `Color` (`color`) | `#rrggbb` | `Role` decides | A literal colour that overrides `Role`. |
+| `Color` (`color`) | `#rrggbb` or `#rrggbbaa` | `Role` decides | A literal colour that overrides `Role`. The alpha pair makes it translucent over whatever is behind the run. |
 | `Align` (`align`) | `UiComponentAlignments`: `start`, `center`, `end`, `stretch`, `baseline` | `start` | Alignment within the run's own box. |
 | `MaxLines` (`maxLines`) | `int` | One; no limit when `Wrap` is true | How many lines the run may occupy before it ellipsizes. |
 | `Wrap` (`wrap`) | `bool` | One line, ellipsized | Whether the run may break across lines at all. |
@@ -2984,8 +3006,8 @@ takes their width too and pushes them out of the box. See [Sizing](https://docs.
 - Lay the run out with a line height of one; stack gaps are the only vertical spacing.
 - Absent `wrap` means one line, ellipsized. A reader that does not know the key does the same, so the run
   stays inside its box.
-- Reject any `color` that is not `#rrggbb`, and any `role` outside the listed values, rather than passing
-  it through to the styling layer.
+- Reject any `color` that is not `#rrggbb` or `#rrggbbaa`, and any `role` outside the listed values, rather
+  than passing it through to the styling layer.
 - `fontFace`: hold the run back until the face is usable, then reveal it - never draw a fallback face and
   swap. If the face never arrives, or the identifier cannot be resolved, reveal the run in the default face.
 - `digits`: draw every digit on the same advance width, and centre the content in the reservation when it
@@ -2993,8 +3015,8 @@ takes their width too and pushes them out of the box. See [Sizing](https://docs.
 - `spans`: draw the spans in one inline flow instead of `text`, bounded by `wrap` and `maxLines` like
   `text`. Draw each image square and one line high, aligned to the top of its line, so the line height
   stays one; draw its `alt` text while the image is unavailable, or nothing when `alt` is absent. Ignore a
-  span `color` that is not `#rrggbb` and a span that carries neither `text` nor `image`. A reader that does
-  not implement `spans` draws `text`.
+  span `color` that is not `#rrggbb` or `#rrggbbaa` and a span that carries neither `text` nor `image`. A
+  reader that does not implement `spans` draws `text`.
 - `shadow`: when `false`, draw no legibility shadow behind the run. Absent or `true` keeps the reader's
   default. A reader that does not know the key keeps its default.
 - `strokeColor` and `strokeWidth`: draw an outline of that colour around every glyph, reaching `strokeWidth`
@@ -3139,7 +3161,7 @@ hand and hub keep the theme.
 | `MinSize` (`minSize`) | A length | Never shrinks; ellipsizes instead | The floor `size` may shrink to so the run fits. |
 | `Weight` (`weight`) | A font weight | `regular` | The font weight. |
 | `Role` (`role`) | A text role | `primary` | The semantic colour. |
-| `Color` (`color`) | `#rrggbb` | The `role` colour | A literal run colour that overrides `role`. |
+| `Color` (`color`) | `#rrggbb` or `#rrggbbaa` | The `role` colour | A literal run colour that overrides `role`; the alpha pair makes it translucent. |
 | `Align` (`align`) | A `UiComponentAlignments` value | `start` | Alignment within the run's own box. |
 
 #### `macrodeck.clock-dial`
