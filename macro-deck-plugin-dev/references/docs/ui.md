@@ -505,6 +505,63 @@ The cap unit is `UiLength.Cell` (`120`): one deck cell in the reference space a 
 It is a definition, not a measurement - a reader lays the widget out in that space and scales the result to
 the real cell - so it only has to agree across the wire, never with any device's pixels.
 
+### Relative to the containing box
+
+A fraction of the widget cannot size a part of a widget whose box depends on the widget's shape: a ring in a
+grid of rings, whose stroke, icon and percentage have to scale with the ring. `UiLength.OfParent` is a
+fraction of the **containing box** instead - the smaller side of the box the node's parent lays it out
+within.
+
+```csharp
+new UiGrid
+{
+    Key = "rings",
+    Columns = 4,                              // what a reader that cannot choose draws
+    MinCellSize = UiLength.OfBasis(0.25),     // the reader chooses the columns
+    Children = devices.Select(device => new UiLayer
+    {
+        Key = $"ring.{device.Id}",
+        Children =
+        [
+            new UiGauge { Key = $"gauge.{device.Id}", Level = device.Level, Thickness = UiLength.OfParent(0.085, 0.01) },
+            new UiIcon { Key = $"icon.{device.Id}", Icon = "battery", Size = UiLength.OfParent(0.3, 0.05) },
+            new UiTextRun { Key = $"percent.{device.Id}", Text = $"{device.Percent} %", Size = UiLength.OfParent(0.18, 0.03) },
+        ],
+    }).ToArray(),
+}
+```
+
+One tree draws the same rings at any widget size and shape, each device once: the plugin never learns the
+size, and a resize costs no round-trip.
+
+The containing box is, per parent:
+
+| Parent | Containing box of its child |
+|---|---|
+| Grid | The cells the child spans, with the gaps between them |
+| Layer, transform, responsive, first fit | The parent's own box |
+| Stack | The stack's content box: its box minus its padding |
+| Modifier | The modifier's frame box minus its padding |
+| List | None - the scroll axis is open |
+
+A length is `ParentFraction x min(width, height)` of that box in place of the `Basis` term, and
+`MaxOfCross` and `MaxOfCell` still clamp the result. At the root of a view, a missing box counts as the
+basis square.
+
+**When the box is not definite.** Both sides of the containing box must be known. A child of a stack that
+has neither `MainSize` nor `Fill` sits in an open main extent, so its children have no definite box; the
+same goes for a list's children, and a grid under such a child. There the length resolves from `Basis`
+against the widget instead, in measuring and in drawing alike. Give the node `MainSize` or `Fill` when a
+length relative to its box is to work inside it.
+
+**What older readers draw.** A reader that does not know `ofParent` ignores it and resolves `Basis` against
+the widget, so pass the value that reads acceptably there as the second argument of
+`UiLength.OfParent(fraction, fallbackBasis)`. The one-argument form uses the fraction itself, which on a part
+of a small cell is far too large. There is no way to ask a reader whether it knows the member; for a real
+older-reader picture, give the node a `Fallback` with a component version, as
+[stack overflow](https://docs.macro-deck.app/ui/components/stack-and-layer/) does. When a helper copies a length, use `with` rather than
+rebuilding it member by member, or the member is dropped.
+
 ### Sharing a row: `Fill` and `MainSize`
 
 ```csharp
@@ -574,6 +631,7 @@ switches when the box changes. To choose by what the text needs rather than by t
 | `0.2` / `UiSize.FromBasis(0.2)` / `UiLength.OfBasis(0.2)` | `0.2 x basis` |
 | `UiSize.FromBasis(0.2, 0.5)` | `min(0.2 x basis, 0.5 x containing stack's cross extent)` |
 | `UiSize.Capped(0.2, 20)` | `min(0.2 x basis, 20 reference units)` - `MaxOfCell = 20 / UiLength.Cell` |
+| `UiLength.OfParent(0.1, 0.01)` / `UiSize.FromParent(0.1, 0.01)` | `0.1 x` the smaller side of the containing box; `0.01 x basis` where that box is not definite or the reader does not know the member |
 | `UiSize.From(() => ...)` / `UiSize.Optional(...)` | computed each evaluation / may be absent |
 
 | Property | On | Meaning |
@@ -589,6 +647,8 @@ Reader rules:
 
 - A reader that cannot determine the containing stack's cross extent ignores `MaxOfCross` rather than
   guessing.
+- A reader that cannot determine a definite containing box, or whose parent is a list, resolves `ParentFraction`
+  from `Basis` against the widget, and does so in measuring as well as in drawing.
 - `MaxOfCell` only means something where a deck cell grid exists. A reader laying a view out on anything
   else - a folder view, a browser window, a dialog - ignores it.
 - `MainSize` and `Fill` mean nothing on a [layer](https://docs.macro-deck.app/ui/components/stack-and-layer/)'s children: each gets the
@@ -1139,6 +1199,8 @@ profile's rule decides which of the two a new feature is. [Modifiers](https://do
 | `allowTransparent` on `color` | A property | Ignores it and offers no Transparent swatch; a stored `transparent` still shows as the input's value. |
 | `thresholds` (`UiThresholdsInput`) and its `unit`, `fixedCount`, `fixedColors` and `maxCount` properties | A configuration type | Declines it and draws the node's `fallback`, or shows the field as unsupported. |
 | `allowVariables` on `color` and `thresholds` | A property | Ignores it and offers fixed colours only. |
+| `ofParent` on a length (`UiLength.OfParent`) | A member of an existing value | Ignores it and resolves `basis` against the widget, which is why `basis` is always sent. Pass the fallback you want as the second argument. See [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/#relative-to-the-containing-box). |
+| `minCellSize` on `ui.grid` | A property | Ignores it and draws `columns` by `rows`, hiding the children that do not fit those rows. Set both to the arrangement an older reader should draw. See [Grid](https://docs.macro-deck.app/ui/components/grid/#choosing-the-columns). |
 | `#rrggbbaa` wherever a `#rrggbb` colour is accepted | A value | Rejects it like any other unknown spelling: the property counts as omitted and the theme colour is drawn. |
 
 See [ADR 0064](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0064-components-are-a-registry-over-two-namespaces.md)
@@ -1163,6 +1225,7 @@ against it.
 | `PackageSigner` and `PackageVerifier` refuse an icon pack with more than 30,000 archive entries, counting the signature files, with `too-many-entries`; an icon pack's `pack.json` may be up to 32 MiB instead of 8 MiB | SDK released after 3.0.0-beta.13 | Signing a pack that would exceed 30,000 entries now fails. No host ever imported more than 10,000 entries, so no signed pack that installs is affected. Plugin, profile and template manifests keep the 8 MiB bound. See [Publish an icon pack](https://docs.macro-deck.app/creator-portal/publish-icon-pack/#size-limits). |
 | An exported icon pack, profile or widget carries one master image per icon and no smaller sizes; Macro Deck creates the sizes it serves from the master when an icon is first shown, and ignores size files in packs it imports | Released after 3.0.0-beta.13 | An icon pack bundled from a newer export has half to a quarter of the files. Macro Deck 3.0.0-beta.13 and older import it but show its full-size masters at every size. A bundled pack exported by an older version still imports; its size files are not used. See [Publish an icon pack](https://docs.macro-deck.app/creator-portal/publish-icon-pack/#size-limits). |
 | Icons can have [appearances](https://docs.macro-deck.app/guide/concepts/#icon-appearances). An exported icon pack's `pack.json` and a profile or widget archive nest them under their icon and list their masters as extra files. For such an icon, a plugin icon handle's `resourceId` carries a marker, and a device surface's `IconId` is the GUID of the appearance chosen for that device | Released after 3.0.0-beta.15 | A pack bundled from a newer export has one more file per appearance; Macro Deck versions without appearances import it and show the default images, and an `icon-pack add` from an older CLI accepts it. A plugin that treats `resourceId` as opaque sees no difference. A device provider gets a GUID it may not find in icon listings; `GetIconAsync` serves it. Icons without appearances behave as before. See [Publish an icon pack](https://docs.macro-deck.app/creator-portal/publish-icon-pack/) and [Devices](https://docs.macro-deck.app/features/devices/). |
+| An icon can have appearances with the trait `variant` (key `variant=outlined`), named by the user and picked manually. The **Set Icon Appearance** action's `iconAppearance` parameter is now a dynamic choice listing them, instead of a fixed list | Released after 3.0.0-beta.15 | Stored values and key syntax are unchanged; a client that cannot load options still shows the stored value. A pack with `variant` appearances imports in any version that has appearances, and older versions show the default image. A `variant` appearance never matches a viewer context, so it is never selected automatically. See [Button icons](https://docs.macro-deck.app/features/button-icons/). |
 | Turning an integration off withdraws everything its providers registered - widget types, layouts, folder views, screensavers - and takes its devices offline. While it is off, registering one of those is validated and answered as usual but not kept, and its devices stay offline whatever presence is reported | Released after 3.0.0-beta.14 | A plugin the user turned off no longer has its widget types, layouts, folder views or screensavers offered, including after it reconnects, and its devices show offline. Nothing changes while it is on, or for a plugin that was never configured. When the user turns it back on, the plugin is asked to initialize again, as after a configuration change, and registers what it offers. |
 | A `ui.list` reader starts its `reveal` count over when the list's content is replaced: it holds fewer children than at its previous paint, or the child at the furthest index sent is gone or has another id | Released after 3.0.0-beta.11 | A `reveal` can now carry an index at or below one the plugin already received, after its list shrank or its rows were replaced, including a row inserted or removed above the furthest index. A handler that only grows its window, as [List](https://docs.macro-deck.app/ui/components/list/#loading-more-items) shows, is unaffected; one that sets its window from the index unconditionally can shrink it and should keep the larger value. A reader that has not adopted this rule, such as an older Companion app, may not ask again after a replacement. |
 | A colour with alpha, stored as `rgba(...)` or `#rrggbbaa`, is drawn translucent on the deck and in the widget editor | Released after 3.0.0-beta.15 | A widget appearance patch or stored widget data with such a colour, which used to be drawn opaque, now lets the tile face show through. Send `#rrggbb` to keep a colour opaque. Device surfaces still receive opaque `#rrggbb`. |

@@ -925,6 +925,7 @@ await context.Widgets.ApplyAsync(new WidgetAppearanceRequest
 ```
 
 `IconAppearance` takes an appearance key, its traits joined by `;`, or `default` for the icon's own image.
+A custom appearance a user named, such as Outlined, has the key `variant=outlined`.
 To return to automatic selection, send `ClearProperties = [WidgetAppearanceProperty.IconAppearance]` or an
 empty string. In state mode the pin belongs to the icon of the targeted state, like the icon itself.
 
