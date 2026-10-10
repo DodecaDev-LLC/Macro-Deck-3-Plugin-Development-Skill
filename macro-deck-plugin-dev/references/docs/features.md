@@ -257,7 +257,8 @@ public IReadOnlyList<ActionParameter> Parameters { get; } =
 `Password`, `Secret`, `Choice`, `DynamicChoice`, `Autocomplete`, `MultiSelect`, `Color`, `File`,
 `Folder`, `Hotkey`, `Duration`, `DateTime`, `Json`, `Code`, `KeyValue`, `Object`, `Array`, `IpAddress`,
 `Url`, `Icon`, `Image`, `KeyboardSequence`, `KeyboardCombo` and `WidgetTarget`. The executor reads
-values by `Name` from `context.Parameters`.
+values by `Name` from `context.Parameters`. The key names in `Hotkey`, `KeyboardCombo` and
+`KeyboardSequence` values are listed under [Keyboard combos](https://docs.macro-deck.app/features/events/#keyboard-combos).
 
 A `Color` parameter receives `#rrggbb`. The user can bind it to a
 [Color variable](https://docs.macro-deck.app/features/variables/#color-variables); the host resolves it when the action runs and drops
@@ -2066,6 +2067,78 @@ events that carry nothing:
 ```csharp
 _events.Publish("connected");
 ```
+
+### Keyboard combos
+
+A `KeyboardCombo` or `Hotkey` value is an object with a `key` name and a `modifiers` list:
+`{"modifiers":["Ctrl","Shift"],"key":"Minus"}`. The combo editor stores these names, and Press Key,
+Key Down and Key Up read them. Publish the same names from a keyboard hook and every trigger the user
+set up in the editor matches.
+
+| Key | Name | Means |
+| --- | --- | --- |
+| Letters | `A` to `Z` | The key labeled with that letter on the active layout: `Z` is the Z key on QWERTZ too. |
+| Digits | `0` to `9` | The key in the digit row, also on AZERTY where it types `&`, `é` and so on without Shift. |
+| Punctuation | `Minus`, `Equal`, `BracketLeft`, `BracketRight`, `Backslash`, `Semicolon`, `Quote`, `Comma`, `Period`, `Slash`, `Backquote` | A physical position, named after the key at that position on a US keyboard, like the browser's `KeyboardEvent.code`. On German, `Minus` is the `ß` key and `BracketLeft` the `ü` key. |
+| ISO key | `IntlBackslash` | The extra key that ISO keyboards have next to left Shift (`<` on German). |
+| Other keys | `F1` to `F24`, `Enter`, `Escape`, `Tab`, `Space`, `Backspace`, `Delete`, `Insert`, `CapsLock`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `PrintScreen`, `ScrollLock`, `Pause`, `NumLock`, `Numpad0` to `Numpad9`, `NumpadAdd`, `NumpadSubtract`, `NumpadMultiply`, `NumpadDivide`, `NumpadDecimal`, `NumpadEnter`, `MediaPlayPause`, `MediaStop`, `MediaTrackNext`, `MediaTrackPrevious`, `AudioVolumeUp`, `AudioVolumeDown`, `AudioVolumeMute` | The same key on every layout. |
+
+Modifiers are `Ctrl`, `Shift`, `Alt` and `Meta` (Command on macOS, Windows key on Windows), plus
+`RightCtrl`, `RightShift`, `RightAlt` and `RightMeta` when only the right-hand key counts.
+
+The host also accepts older spellings, and trigger matching treats them as the name they stand for:
+`-` for `Minus` (and the other unshifted US characters), `Esc`, `Return`, `Del`, `Ins`, `PgUp`, `PgDn`,
+`Up`/`Down`/`Left`/`Right` and `5` as well as `D5` for keys, `Control`, `Cmd`, `Command`, `Win`, `Super`,
+`Option` and `AltGr` (which counts as `Alt`) for modifiers. Names are case-insensitive. A name the host
+does not know is compared as text, so two plugins can still agree on a key Macro Deck has no name for.
+
+Only configuration parameters of type `KeyboardCombo` or `Hotkey` match this way. A trigger filter or a
+flow condition on `$event` compares the published JSON text, as described above.
+
+#### From a native keyboard hook
+
+`MacroDeck.Sdk.Input` turns the codes a keyboard hook delivers into the names above, so a plugin needs no
+table of its own:
+
+```csharp
+using MacroDeck.Sdk.Input;
+
+KeyCode key = NativeKeys.FromWindows(virtualKey, scanCode, isExtended); // or FromMacOS(code), FromLinux(code)
+
+if (KeyNames.TryGetModifier(key, out var modifier))
+{
+    held = isKeyDown ? held | modifier : held & ~modifier;   // track the modifier keys yourself
+    return;
+}
+
+if (isKeyDown && key != KeyCode.None)
+{
+    events.Publish("hotkey-pressed", new Dictionary<string, object?>
+    {
+        ["combo"] = new { modifiers = KeyNames.ToModifierNames(held), key = KeyNames.ToName(key) }
+    });
+}
+```
+
+`KeyNames.ToName` returns the one name the editor stores, and `KeyNames.TryParse` and `TryParseModifier` accept
+every older spelling listed above. A key without a `KeyCode`, or a number that is no key code, comes back as
+`KeyCode.None`: do not publish it. The methods never throw and can be called from any thread.
+
+`ToModifierNames` names a modifier `Ctrl` when the left key is held, alone or together with the right one, and
+`RightCtrl` only when just the right key is held, like the editor records it. Trigger matching compares the two
+as different modifiers, so a trigger bound as `Ctrl` does not fire for `RightCtrl`.
+
+| Platform | Method | Notes |
+| --- | --- | --- |
+| Windows | `NativeKeys.FromWindows(virtualKey, scanCode, isExtended)` | Pass the extended flag: it tells `NumpadEnter` from `Enter` and a navigation key from the numpad key that reports the same virtual key while NumLock is off. The scan code (without the extended prefix) names a punctuation key's position exactly. The overload without it reads the foreground window's layout instead. |
+| macOS | `NativeKeys.FromMacOS(keyCode)` | Letters are resolved through the active input source, so key code 6 is `Y` on German. A letter position whose key types no Latin letter (Cyrillic) keeps its US letter. Key code 10 is `IntlBackslash` and 50 is `Backquote`, as Safari and the combo editor report them; on ISO Apple keyboards those two are swapped relative to the key's position. Function keys above `F20`, the Fn key and media keys have no key code and return `None`. |
+| Linux | `NativeKeys.FromLinux(evdevCode)` | An evdev code is a position, so letters follow US positions on every layout: the Z-labeled key of a German layout is `Y`. |
+
+`FromMacOS` reads the input source with the Text Input Sources API, which Apple documents for the main thread. It
+has been exercised from a thread-pool thread, not from an event tap callback.
+
+`GetBindings()` returns values exactly as the editor stored them, so a hook that swallows bound combos has
+to accept the older spellings too, not only the names in the table.
 
 ### Reading what is bound
 
