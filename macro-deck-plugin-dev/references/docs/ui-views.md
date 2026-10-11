@@ -1134,6 +1134,8 @@ client can only show a few modals at once. Do not hold a modal open as a substit
 - [Button](https://docs.macro-deck.app/ui/components/button/)
 - [Events](https://docs.macro-deck.app/ui/concepts/events/)
 
+To ask something of every client at once, or to show a message that is not tied to a running action, see [Notifications](https://docs.macro-deck.app/features/notifications/).
+
 ## Screensavers
 
 > Source: https://docs.macro-deck.app/ui/views/screensavers/
