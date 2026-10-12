@@ -286,6 +286,31 @@ stored values, keyed by parameter name. `Secret` and `Password` parameters arriv
 (`UiConfigSurfaceAttributes.MaskedSecretValue`, `"$masked"`), because opening a configuration surface is
 not an intent to reveal a secret. You get the real value the ordinary way, when the user submits.
 
+### Letting the user search a long list
+
+A choice draws a plain select. When its list is long, a few dozen counters, scenes or devices, set
+`Searchable` so the user can type into the field to find an option:
+
+```csharp
+new UiChoiceInput
+{
+    Key = "counterId",
+    Label = Strings.Widget.Counter(),
+    Searchable = true,
+    Binding = Bind.To(counter),
+    Options = UiValue.Of<IReadOnlyList<UiOption>>(counters),
+}
+```
+
+- **Typing filters the options by label**, and the value is still one of the options: typed text alone is
+  never stored, and the field shows the picked option's label, not its value.
+- `UiDynamicChoiceInput` takes the same `Searchable`, and searches the options it resolved.
+- On a choice that is also `Segmented`, `Cards` or `AllowsCustomValue`, `Searchable` has no effect. A
+  choice that allows a custom value is already a field that filters as the user types.
+- A Macro Deck release from before `Searchable` ignores the property and draws the plain select.
+
+For an action parameter, see [Action parameters](https://docs.macro-deck.app/features/actions/#letting-the-user-search-a-long-list).
+
 ### Letting the user pick a file, folder or image
 
 For a path, use a path input rather than a `UiStringInput`, so the user can browse instead of typing:
@@ -995,9 +1020,10 @@ The views themselves are served over the `ui` capability, like every other Macro
 
 > Source: https://docs.macro-deck.app/ui/views/modal/
 >
-> Opening a dialog from an action, how it is sized, which node completes it, and what bounds the wait.
+> Opening a dialog from an action or a widget, how it is sized, which node completes it, and what bounds the wait.
 
-An action can put a dialog on the client that ran it and, when it needs one, wait for the answer.
+An action can put a dialog on the client that ran it and, when it needs one, wait for the answer. A widget or
+another view can do the same on the client that pressed it, through the event's origin.
 
 ### Example
 
@@ -1074,6 +1100,10 @@ A `dialog` surface carries `modalId`, `viewId` and whatever `Data` the action pa
 (`UiDialogSurfaceAttributes`). Decline a `viewId` you do not serve rather than guessing. A dialog is
 `exclusive`: it belongs to one client, so unlike a deck widget its tree may carry entered values.
 
+It also carries `culture` (the language the person reads Macro Deck in, for example `de`) and `hourCycle`
+(`h12` or `h23`, already following the person's time format setting). Use them when you write a time of
+day or other formatted value as text. An older host sends neither, so fall back to your own default.
+
 ### Completing a modal
 
 ```csharp
@@ -1105,6 +1135,22 @@ var opened = await context.Ui.ShowModalAsync(
 
 The non-generic overload is for a modal that shows something rather than asks something. It returns as
 soon as the modal is open, with `true` if it opened.
+
+### Opening a dialog from a widget
+
+A press on your widget hands the session an `IUiEventOrigin` (see
+[Answering the client that acted](https://docs.macro-deck.app/ui/views/sessions/#answering-the-client-that-acted)). It opens your
+dialog on the client that pressed, with the same `ModalDefinition` and the same answer rules:
+
+```csharp
+var answer = await origin.ShowModalAsync<string>(
+    new ModalDefinition { ViewId = "device-picker", Title = MyStrings.SelectDevice() },
+    cancellationToken);
+```
+
+Unlike an action's modal, nothing bounds the wait but your `cancellationToken`, the user and the client
+staying attached: a client that leaves the view or disconnects ends it as a cancellation. Pass a token that
+ends with the work the dialog belongs to.
 
 ### How a dialog is sized
 
@@ -1425,6 +1471,69 @@ depend on a live connection. Declaring a surface does not commit you to every se
 `null` from `CreateSessionAsync` to decline one. The kind vocabulary is open (see
 [Views and surfaces](https://docs.macro-deck.app/ui/views/)), so declining a kind you do not recognise is correct, not an error.
 
+### Answering the client that acted
+
+Macro Deck calls `Dispatch(UiEvent, IUiEventOrigin)` for every client event. The default forwards to
+`Dispatch(UiEvent)`, so a session that does not care who acted implements only that. The origin names the
+client (`ClientId`) and acts on it:
+
+| Member | What the client sees |
+| --- | --- |
+| `ReportFailureAsync(message)` | A failure, shown the way a failed action is shown, for example as a toast. |
+| `ShowModalAsync(modal)` | One of your provider's `dialog` views, opened as a [modal](https://docs.macro-deck.app/ui/views/modal/); returns once it is open. |
+| `ShowModalAsync<T>(modal)` | The same, waiting for the user's answer. |
+
+An origin stays usable after your handler returned, so work that finishes later - a request to a device or
+a server - can still report its failure on the client that pressed. It acts only while that client is still
+attached to the session: once it closed the view or disconnected, the calls answer `false` or a cancellation
+and never throw for that. An event Macro Deck raised itself has no client, and its origin reaches nobody.
+
+With the DSL, keep the origin in a field before handing the event to the view. `Dispatch` is never called
+concurrently for one session, so the handler that runs during `_view.Dispatch` reads the right one:
+
+```csharp
+public sealed class ViewSession : IUiSession
+{
+    private IUiEventOrigin? _origin;
+
+    // Other members as in the example above.
+
+    public void Dispatch(UiEvent uiEvent) => _view.Dispatch(uiEvent);
+
+    public void Dispatch(UiEvent uiEvent, IUiEventOrigin origin)
+    {
+        _origin = origin;
+        _view.Dispatch(uiEvent);
+    }
+
+    private async Task ToggleAsync()
+    {
+        var origin = _origin;
+        if (!await _client.TryToggleAsync())
+        {
+            await origin!.ReportFailureAsync(Strings.Widget.ToggleFailed());
+        }
+    }
+}
+```
+
+Capture the origin into a local before the first `await`, as `ToggleAsync` does: the field holds the
+origin of the latest event, which may be a different client's by the time the work resumes.
+
+A plugin talking to a Macro Deck that predates origins still receives every event through this overload;
+its origins answer `false` or a cancellation. In tests, pass a `FakeUiEventOrigin` from
+`MacroDeck.Plugin.Testing` to `Dispatch` and read what the session showed from `ReportedFailures` and
+`OpenedModals`.
+
+### While Macro Deck is locked
+
+While the computer running Macro Deck is locked, a client's events to a `widget` or `dialog` session of a
+plugin, or of an integration served the same way, never reach the provider - the same rule that keeps
+hardware presses and actions from running then. The client's request is refused with `HOST_LOCKED`, and a
+press, long press, double press, tap, change, adjust, swipe or end of a drag shows the client the same
+"locked" failure a refused action shows. `reveal` is still delivered, so a widget can keep its content up to
+date. You do not need a lock check of your own.
+
 ### The lifecycle every surface shares
 
 | Step | What happens | Your side |
@@ -1487,11 +1596,15 @@ Like the other provider-shaped capabilities, `ui` declares the single local id `
 | `session.open` (config) | A `config` surface names its entry point in its surface attributes - `integration-config` with the config flow session, `action-config` with the action id and the instance's stored parameters, `folder-view-config` with the folder and its view, or `widget-config` with the widget id, type and stored configuration. `MacroDeck.Plugin.Hosting` routes `integration-config` and `action-config` to `IUiConfigFlow`/`IUiConfigurableActionDefinition` before it consults `IUiProvider`. |
 | `session.open` (developer preview) | A `developer-preview` surface names one registered scenario in its surface attributes. `MacroDeck.Plugin.Hosting` builds that scenario and never consults `IUiProvider`, so a production provider is unreachable from a preview. |
 | `session.snapshot` | Produce the current full tree. The tree does not return on the result - it arrives as a separate `host.invoke ui/snapshot`, so a first attach and a resync share one delivery path. A provider may also send `ui/snapshot` unasked to replace its whole tree, at any revision; later patches continue from that tree's revision. |
-| `session.event` | A client acted on a node. `clientId` says which one, and is meaningful only for a shared session. A `pointer-move` still waiting to be sent is replaced by a newer one for the same node from the same client, and one the plugin could not take because it was busy or slow is dropped; see [Pointer streams and taps](https://docs.macro-deck.app/ui/components/modifier/#pointer-streams-and-taps). |
+| `session.event` | A client acted on a node. `clientId` says which one, and is meaningful only for a shared session. `MacroDeck.Plugin.Hosting` hands it to your session as the event's origin. A `pointer-move` still waiting to be sent is replaced by a newer one for the same node from the same client, and one the plugin could not take because it was busy or slow is dropped; see [Pointer streams and taps](https://docs.macro-deck.app/ui/components/modifier/#pointer-streams-and-taps). |
 | `session.close` | The host is ending this session. |
 | `modal.result` | How a modal this plugin opened ended. Host-to-plugin because a person, not a timeout, bounds the wait - see [Modal views](https://docs.macro-deck.app/ui/views/modal/). |
 
-Trees, patches and faults travel the other way through the [`ui` host api](https://docs.macro-deck.app/reference/websocket/#host-callbacks).
+Trees, patches and faults travel the other way through the [`ui` host api](https://docs.macro-deck.app/reference/websocket/#host-callbacks),
+and so do an origin's calls: `origin.report-failure` and `origin.show-modal` name the session and the
+`clientId` the event carried. The host acts on them only for a session the plugin serves and a client still
+attached to it, and answers `delivered: false` or `opened: false` otherwise. A host that predates them
+answers `CAPABILITY_UNSUPPORTED`, which the SDK turns into `false` or a cancellation.
 
 ### See also
 
@@ -2061,7 +2174,7 @@ true**. There is no icon: the picker draws a live sample instead.
 
 One session is opened per widget per viewer, so each tile sees only its own `data`. Push patches on the
 session to update it; events its tree declares come back to that same session. Saved and draft data
-arrive the same way, because you cannot read Macro Deck's stored widgets. By default a press runs nothing on
+arrive the same way, so a provider never has to look a widget up to draw it. By default a press runs nothing on
 the host - a tile whose tree declares no events does nothing when pressed - unless the type
 [runs the user's actions](#running-the-users-actions) or has a
 [default Short Press action](#a-default-short-press-action).
@@ -2074,7 +2187,21 @@ UiSurfaceKinds.Preview // with attributes["sample"] == true
 
 A picker card is a live `preview` surface with `sample: true`: draw a representative sample without
 reading anything live. Serving it is optional - declining gets a card naming the type, and the type stays
-pickable either way.
+pickable either way. Write the sample's own words in the language `UiWidgetSurface.Culture(surface)` names,
+see [Deck widget views](https://docs.macro-deck.app/ui/views/widget/#what-the-surface-carries).
+
+### Reading a stored widget
+
+```csharp
+var widget = await context.Widgets.GetWidgetDataAsync(widgetId, cancellationToken);
+var allowed = widget?.Data.TryGetProperty("allowModeration", out var value) == true && value.GetBoolean();
+```
+
+A dialog or an action outlives the press that started it, and the user may change the widget meanwhile.
+`GetWidgetDataAsync` reads the widget's stored data at that moment, for a widget of one of your own types.
+It answers `null` for a widget that does not exist, for another provider's or a built-in widget, and on a
+Macro Deck that predates it, so treat `null` as "not known" and do the safe thing. The data is the saved
+configuration as stored, never a draft and without resolved colour references.
 
 ### Configuration
 
@@ -2286,7 +2413,8 @@ Registering and withdrawing a type travels the other way as the `widget-types` h
 | `unregister` | Withdraws a widget type. Widgets already using it keep their stored type and data and wait for it to return. |
 
 The widgets themselves are drawn, previewed and configured over the `ui` capability, like every other
-Macro Deck UI surface.
+Macro Deck UI surface. `GetWidgetDataAsync` crosses as the `widgets` host API's `get-data` operation; the host
+takes the owner from the connection, never from the request.
 
 ### See also
 
@@ -2382,6 +2510,7 @@ registration, the picker card and configuration. The same vocabulary also draws 
 | `data` | Its stored configuration, as JSON. |
 | `cornerRadius` | The tile's corner radius. |
 | `sample` | `true` when the picker asks for a representative sample. |
+| `culture` | The language Macro Deck is set to, for example `de` or `pt-BR`. Absent on a Macro Deck that predates it. |
 | `ghost` | `true` when drawing the drag ghost of a widget that is also drawn live. |
 
 The surface carries no size: a widget is resized on the deck without asking you. To lay a 2x1 or 1x2 tile
@@ -2395,13 +2524,45 @@ did.
 For a type that declares [standard appearance](https://docs.macro-deck.app/ui/views/widget-types/#standard-appearance),
 `UiWidgetAppearance.Read(data)` returns the background, label, colours and font the user or an action set.
 
+`UiWidgetSurface` in `MacroDeck.Ui.Widgets` reads these leniently, so a missing or malformed attribute
+reads as absent rather than throwing:
+
+| Member | Answers |
+| --- | --- |
+| `IsFor(surface, widgetType)` | Whether a `widget` or `preview` surface draws your widget type. |
+| `IsConfigurationFor(surface, widgetType)` | Whether a `config` surface is the `widget-config` entry point of your widget type. |
+| `Data(surface)` | The stored configuration (`data`, or `widgetData` on a configuration surface); an empty object when absent. |
+| `WidgetId(surface)` | The stored widget, or `null` for a preview or an unsaved widget. |
+| `IsSampleRequested(surface)` | Whether a `preview` asks for a picker sample. |
+| `Culture(surface)` | The language to write the widget's own text in, or `null` when the surface names none. |
+
+Labels and other localized text in your tree need no culture: each client resolves them in its reader's
+language. `culture` is for text the widget draws as content, such as the names and messages of a picker
+sample, which travel as literal text. Resolve those with your own catalog in that culture and fall back to
+your default language when it is absent.
+
+### Keeping content clear of the corner
+
+A tile is a rounded rectangle, and content laid out to its edge runs under the curve.
+`UiWidgetSafeArea.For(surface)` is the padding a tile keeps: what the tile's `cornerRadius` intrudes on its
+diagonal, but never less than `BreathingRoom`, the default gap between two tiles. A surface without a
+corner radius, such as a preview, uses `DefaultCornerRadius`. `LengthFor(cornerRadius)` returns the same
+inset as a `UiLength` for a gap or a size.
+
+```csharp
+var root = new UiStack
+{
+    Key = "root",
+    Padding = UiWidgetSafeArea.For(request.Surface),
+    Children = [/* ... */],
+};
+```
+
 ### Previews, samples and ghosts
 
 ```csharp
-var attributes = request.Surface.Attributes;
-var isSample = attributes.TryGetValue(UiWidgetSurfaceAttributes.Sample, out var sample)
-    && sample.ValueKind == JsonValueKind.True;
-var isGhost = attributes.TryGetValue(UiWidgetSurfaceAttributes.Ghost, out var ghost)
+var isSample = UiWidgetSurface.IsSampleRequested(request.Surface);
+var isGhost = request.Surface.Attributes.TryGetValue(UiWidgetSurfaceAttributes.Ghost, out var ghost)
     && ghost.ValueKind == JsonValueKind.True;
 ```
 

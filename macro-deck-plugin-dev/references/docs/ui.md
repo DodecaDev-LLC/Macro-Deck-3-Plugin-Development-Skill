@@ -1196,12 +1196,14 @@ profile's rule decides which of the two a new feature is. [Modifiers](https://do
 | `ui.first-fit`, component version 1 | A type | Draws the node's `fallback`. One is invented when you set none: a copy of the last layout, the one that is always acceptable. When it decides whether the tile's own press belongs to a control, it walks every layout - see [First fit](https://docs.macro-deck.app/ui/components/first-fit/#older-readers-and-readers-that-cannot-measure). |
 | `macrodeck.video-stream` and its `stream` property, component version 1 | A type | Draws the node's `fallback`, and opens no session. See [Video stream](https://docs.macro-deck.app/ui/components/video-stream/#older-readers). |
 | `transparent` as the `background` of `ui.stack` and `ui.button` | A value | Treats it as no background: a stack draws the tile face behind it, a button its accent colour. The tile face stays, so the folder background does not show through. |
+| `searchable` on `choice` and `dynamic-choice` | A property | Ignores it and draws the plain select; the value and its label are unchanged. |
 | `allowTransparent` on `color` | A property | Ignores it and offers no Transparent swatch; a stored `transparent` still shows as the input's value. |
 | `thresholds` (`UiThresholdsInput`) and its `unit`, `fixedCount`, `fixedColors` and `maxCount` properties | A configuration type | Declines it and draws the node's `fallback`, or shows the field as unsupported. |
 | `allowVariables` on `color` and `thresholds` | A property | Ignores it and offers fixed colours only. |
 | `ofParent` on a length (`UiLength.OfParent`) | A member of an existing value | Ignores it and resolves `basis` against the widget, which is why `basis` is always sent. Pass the fallback you want as the second argument. See [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/#relative-to-the-containing-box). |
 | `minCellSize` on `ui.grid` | A property | Ignores it and draws `columns` by `rows`, hiding the children that do not fit those rows. Set both to the arrangement an older reader should draw. See [Grid](https://docs.macro-deck.app/ui/components/grid/#choosing-the-columns). |
 | `#rrggbbaa` wherever a `#rrggbb` colour is accepted | A value | Rejects it like any other unknown spelling: the property counts as omitted and the theme colour is drawn. |
+| `device-laptop`, `device-watch`, `device-headphones`, `device-gamepad`, `device-mouse`, `device-keyboard`, `device-speaker`, `battery` and `battery-charging` as the `icon` of `ui.icon`, component version 2 | Values, gated by a component version | Draws the node's `fallback`, because a producer using one of these names asks for version 2. Without that ask a version 1 reader draws nothing for the name. See [Icon](https://docs.macro-deck.app/ui/components/icon/#names-and-versions). |
 
 See [ADR 0064](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0064-components-are-a-registry-over-two-namespaces.md)
 for why the vocabulary is organized as a registry over the `ui.*`/`macrodeck.*` namespaces rather than one
@@ -1230,6 +1232,7 @@ against it.
 | A `ui.list` reader starts its `reveal` count over when the list's content is replaced: it holds fewer children than at its previous paint, or the child at the furthest index sent is gone or has another id | Released after 3.0.0-beta.11 | A `reveal` can now carry an index at or below one the plugin already received, after its list shrank or its rows were replaced, including a row inserted or removed above the furthest index. A handler that only grows its window, as [List](https://docs.macro-deck.app/ui/components/list/#loading-more-items) shows, is unaffected; one that sets its window from the index unconditionally can shrink it and should keep the larger value. A reader that has not adopted this rule, such as an older Companion app, may not ask again after a replacement. |
 | A colour with alpha, stored as `rgba(...)` or `#rrggbbaa`, is drawn translucent on the deck and in the widget editor | Released after 3.0.0-beta.15 | A widget appearance patch or stored widget data with such a colour, which used to be drawn opaque, now lets the tile face show through. Send `#rrggbb` to keep a colour opaque. Device surfaces still receive opaque `#rrggbb`. |
 | The Slider and History Graph widgets have colour thresholds: while a widget's `thresholdsEnabled` is on, the band its value falls in picks its colour | Released after 3.0.0-beta.15 | A `WidgetAppearanceProperty.AccentColor` patch on such a widget is still stored and acknowledged, but has no visible effect until the user turns the thresholds off. |
+| A Weather widget's default press runs the details action its station's provider declares through `IWeatherProvider.DetailsAction`, instead of always running the built-in Weather integration's **Weather details** action | Released after 3.0.0-beta.16 | A weather plugin built against an older SDK declares no details action, so pressing a widget that shows one of its stations runs nothing until the user adds a flow; a flow the user added still runs. See [Pressing the widget](https://docs.macro-deck.app/features/weather/#pressing-the-widget). |
 
 ## Patches
 
@@ -1318,9 +1321,11 @@ one you build yourself: it carries the `contentHash` that makes clients fetch ne
   plugin, the same rule as for icons a plugin supplies. PNG and JPEG are the safe choice for photos.
 - **Size.** One resource is at most `maxUiResourceBytes` (2 MiB). That limit is deliberate and applies per
   resource: downscale camera photos before registering them. All of a plugin's resources together are at
-  most `maxUiResourceBytesPerPlugin` (16 MiB) and `maxUiResourcesPerPlugin` (256). Over the quota,
-  registration throws `UiResourceException` with `QuotaExceeded` and the name keeps what it had. Free room
-  with `RemoveAsync`; removing a name that holds nothing is not an error.
+  most `maxUiResourceBytesPerPlugin` (48 MiB) and `maxUiResourcesPerPlugin` (1024); Macro Deck holds them in
+  memory, so a plugin at its quota costs up to 48 MiB. Older Macro Deck versions allowed 16 MiB and 256, so
+  read the quota from the protocol descriptor instead of assuming it. Over the quota, registration throws
+  `UiResourceException` with `QuotaExceeded` and the name keeps what it had. Free room with `RemoveAsync`;
+  removing a name that holds nothing is not an error.
 - **Lifetime.** Macro Deck keeps resources in memory, never on disk, for as long as the plugin session
   lasts: through a reconnect that resumes it and through re-initialisation after a configuration change.
   They are released when the session ends and are gone after Macro Deck restarts, when your integration is
@@ -1334,7 +1339,10 @@ one you build yourself: it carries the `contentHash` that makes clients fetch ne
 A music player plugin can register its own player's cover in one call with
 [`GetArtworkAsUiResourceAsync`](https://docs.macro-deck.app/features/music-players/#showing-the-cover-in-your-own-ui), and the cover of
 any other player with
-[`RegisterMusicPlayerArtworkAsync`](https://docs.macro-deck.app/features/music-players/#showing-another-players-cover).
+[`RegisterMusicPlayerArtworkAsync`](https://docs.macro-deck.app/features/music-players/#showing-another-players-cover). Give that call
+the size the cover is shown at (`maxSize`) and Macro Deck registers its 128 or 256 pixel copy instead of the
+full-size cover, which saves quota; a Macro Deck that predates `maxSize` ignores it and registers the
+full-size cover, at most 640 pixels on its longer side.
 
 In tests, `FakeIntegrationContext.UiResources` is a `FakeUiResourceRegistry` that applies the same rules and
 exposes what was registered, and `MacroDeckTestHost` answers registrations over the wire.
@@ -1349,7 +1357,9 @@ UiResource logo = await context.UiResources.GetPluginIconAsync("logos", "spotify
 var image = new UiImage { Key = "logo", Source = UiValue.Of(logo), Size = 0.2 };
 ```
 
-The first argument is the pack's key in the manifest, the second the icon's name inside that pack.
+The first argument is the pack's key in the manifest, the second the icon's name inside that pack. (A
+built-in integration of Macro Deck answers the same call from the `Icons/<key>/<name>` files in its own
+folder; see [Capability parity](https://docs.macro-deck.app/reference/capability-parity/).)
 
 - **No upload, no quota.** The handle points into Macro Deck's icon store. Nothing is sent from the
   plugin, nothing is held in memory for the session, and nothing counts against

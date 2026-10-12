@@ -662,7 +662,7 @@ GET /api/plugins/protocol HTTP/1.1
 ```json
 {
   "supportedVersions": [1, 2, 3],
-  "capabilityKinds": ["actions", "events", "variables", "icons", "config-flow", "music-player", "weather", "virtual-profiles", "issues", "ui", "localization", "device-provider", "layout-provider", "folder-view-provider", "migration", "widget-type-provider", "screensaver-provider", "messaging", "video-stream-provider", "calendar"],
+  "capabilityKinds": ["actions", "events", "variables", "icons", "config-flow", "music-player", "weather", "virtual-profiles", "issues", "ui", "localization", "device-provider", "layout-provider", "folder-view-provider", "migration", "widget-type-provider", "screensaver-provider", "messaging", "video-stream-provider", "calendar", "config-entries", "battery-provider", "email-inbox"],
   "limits": { "maxMessageBytes": 262144, "maxSessionsPerPlugin": 1 },
   "timeouts": { "handshake": "00:00:10", "sessionResumeWindow": "00:01:00" },
   "pairing": { "supported": true, "requestLifetimeSeconds": 30, "pollIntervalSeconds": 1 }
@@ -926,8 +926,9 @@ A plugin implements the same SDK contracts as an in-process integration, but the
 | Integration icon | Yes | Differs | Uploaded and cached as an asset instead of read synchronously, so a replacement shows after a new asset commit. |
 | Config flows | Yes | Differs | Flow sessions work; OAuth and session context cross as invocation state, not as a live host object. |
 | Music players | Yes | Same | Instances, state, controls, artwork, catalog, devices and transfer work; state reads can degrade to unavailable, but catalog and device failures stay real failures. |
-| Weather | Yes | Same | Instances and snapshots work; unavailable remote state becomes an unavailable snapshot. |
+| Weather | Yes | Same | Instances, snapshots and the details action work; unavailable remote state becomes an unavailable snapshot. `WeatherProvider.NotifySnapshotsChangedAsync` crosses as `weather`/`snapshots-changed`, merged while one is on its way, needs the negotiated `weather` capability and is a no-op on a Macro Deck that predates it. |
 | Calendars | Yes | Differs | Accounts, calendars, events and single-event details work. The account list is snapshot-backed, an `events` reply carries no description or participants and is cut to a size limit, and read failures stay real failures - see [Calendars over the plugin protocol](https://docs.macro-deck.app/features/calendars/#over-the-plugin-protocol). |
+| Email inboxes | Yes | Differs | Inboxes, snapshots and `Changed` work. The inbox list is snapshot-backed, `Changed` reaches the host as a `state.update` held back 250 ms per inbox, a snapshot is cut to its field and size limits, and read failures stay real failures - see [Email inboxes over the plugin protocol](https://docs.macro-deck.app/features/email-inboxes/#over-the-plugin-protocol). |
 | Virtual profiles | Yes | Differs | Catalogs and widget interactions work; the catalog is snapshot-backed and interaction delivery is fire-and-forget. |
 | Device providers | Yes | Same | Full parity from capability version 2, but sessions are always re-opened, never resumed - see [Device provider sessions](#device-provider-sessions). |
 | Folder view providers | Yes | Same | Registered through the `folder-views` host API; see [Provider catalogues across a disconnect](#provider-catalogues-across-a-disconnect). |
@@ -936,8 +937,11 @@ A plugin implements the same SDK contracts as an in-process integration, but the
 | Layout providers | Yes | Same | Registered through the `layouts` host API; see [Provider catalogues across a disconnect](#provider-catalogues-across-a-disconnect). |
 | Migrations | Yes | Same | `describe`, `migrate-action` and `migrate-configuration` work; the declared list is snapshot-backed - see [Migrations](#migrations). |
 | Integration issues | Yes | Same | Listing and resolving are live calls. |
-| Android devices (`IAndroidDeviceManager`) | No | Differs | Plugin-only: a built-in integration reaches ADB through the host's own services, and gets no `IAndroidDeviceManager`. A plugin needs `host:adb` and the user's consent - see [Android devices](https://docs.macro-deck.app/features/android-devices/). |
+| Android devices (`IAndroidDeviceManager`) | Yes | Differs | The same operations, typed ones included, and the same locked-host rule; a built-in integration reads it from `IIntegrationContext.AndroidDevices` and needs only ADB enabled, a plugin also needs `host:adb` and the user's consent. A plugin's screenshot is limited to 8 MiB - see [Android devices](https://docs.macro-deck.app/features/android-devices/). |
 | Video stream providers | Yes | Differs | Same contract and exactly-one-close rule; a plugin's sessions end with its connection and are never carried across a reconnect - see [Video stream sessions](#video-stream-sessions). |
+| Battery providers | Yes | Differs | Same contract and limits. A plugin's devices are withdrawn when its session ends, a resumed reconnect resends them in one `sync` call, and on a host without battery support a publish is a logged no-op - see [Batteries in a plugin](https://docs.macro-deck.app/features/batteries/#in-a-plugin). |
+| Battery devices (`IIntegrationContext.Batteries`) | Yes | Differs | A plugin reads the last `batteries` push, so `Devices` is empty until the host has pushed once and `RemovedIds` can miss a removal made while it was disconnected; a built-in integration reads the live catalog - see [Reading devices](https://docs.macro-deck.app/features/batteries/#reading-devices). |
+| Companion devices (`ICompanionDeviceApi`) | Yes | Differs | The same devices, commands, screenshots and results. A built-in integration reads it from `IIntegrationContext.CompanionDevices` and always has access; a plugin also needs `host:companion-devices` and the user's consent, reads `Access` and `Devices` from the last `companion-devices` push, so `Access` is `Unsupported` and `Devices` empty until the host has pushed once, and is limited to 8 MiB per screenshot and four calls in flight - see [Companion devices](https://docs.macro-deck.app/features/companion-devices/). |
 | Messaging (`IIntegrationContext.Messages`) | Yes | Same | Plugins and built-in integrations share one broker and one set of topics; a plugin's handlers are unreachable while it reconnects - see [Messaging between plugins](https://docs.macro-deck.app/features/messaging/). |
 | Host callbacks (`IIntegrationContext`) | Yes | Same | Host APIs cross the protocol or use pushed snapshots instead of object references - see [Host callbacks](#host-callbacks). |
 | Synchronous catalogs | Yes | Differs | Serve the last `describe` snapshot until `state.update` refreshes it. |
@@ -946,7 +950,20 @@ A plugin implements the same SDK contracts as an in-process integration, but the
 | Platform declaration | Yes | Differs | Follows packaged entrypoints and runtime support, not the `[MacroDeckIntegration]` attribute ([MDP2006](https://docs.macro-deck.app/reference/analyzers/#mdp2006)). |
 | Logging | Yes | Same | `MacroDeck.Plugin.Serilog` forwards events to the host log; identity is stamped from the authenticated session. |
 | Client positions | Yes | Differs | A plugin reads them from pushed deck state, so quick moves can arrive as one change and `GetClients()` is empty until the first push after a host restart. In process, every move is seen. See [Deck and clients](https://docs.macro-deck.app/features/deck/). |
-| UI resource registration | No | Differs | `IIntegrationContext.UiResources` throws `Unsupported` in process; built-in integrations write to the host's resource store directly. See [Resources](https://docs.macro-deck.app/ui/reference/resources/#registering-your-own-images). |
+| UI resource registration | Yes | Same | Same names, media types and quota. In process the resources are kept across re-initialisation and released when the integration is turned off or Macro Deck stops; a plugin's live as long as its session. See [Resources](https://docs.macro-deck.app/ui/reference/resources/#registering-your-own-images). |
+| Bundled icons (`GetPluginIconAsync`) | Yes | Differs | A plugin names a pack from its manifest's `bundledIconPacks`, served by the icon store and listed to the user. In process the key is a folder under the integration's own `Icons` directory, embedded in its assembly, and the icon (SVG, PNG or WebP) is served as a UI resource the user never sees as a pack. Either way it uses no quota and keeps its handle across restarts. |
+| UI event origins (`IUiEventOrigin`) | Yes | Differs | A plugin's calls cross as `ui`/`origin.*`, and a dialog's answer arrives later as `modal.result`; a Macro Deck that predates them answers `false` or a cancellation. See [Answering the client that acted](https://docs.macro-deck.app/ui/views/sessions/#answering-the-client-that-acted). |
+| Client events while locked | Yes | Same | Refused with `HOST_LOCKED` for the `widget` and `dialog` sessions of plugins and of integrations served through the SDK alike, except `reveal`. |
+| Configuration entry lifecycle (`IConfigEntryLifecycle`) | Yes | Differs | Every member is a `config-entries` round trip; a plugin that cannot be reached gets the defaults, so the entry is stored unchanged and the integration initialized again. Retrying on a taken variable name works the same way. The variable api handed to `SynchronizeEntriesAsync` is the plugin's own remote one. See [Taking part in storing an entry](https://docs.macro-deck.app/features/setup-flows/#taking-part-in-storing-an-entry). |
+| Completing a flow without an entry (`ConfigFlowResult.CompleteWithoutEntry`) | Yes | Same | Carried as `withoutEntry` on the `flow.submit` result. See [Completing without an entry](https://docs.macro-deck.app/features/setup-flows/#completing-without-an-entry). |
+| Widget data (`IWidgetApi.GetWidgetDataAsync`) | Yes | Differs | Only widgets of the caller's own types; a plugin's read crosses as `widgets`/`get-data` and answers `null` on a Macro Deck that predates it. |
+| Variable history (`IVariableApi.OpenHistoryAsync`) | Yes | Differs | Only the caller's own global variables. In process a window is raised on every sample; a plugin's window crosses as `variables`/`history.*` and reads the samples once per second, and ends with the connection. A Macro Deck that predates it reports the history as unsupported. |
+| Variable refresh requests | Yes | Differs | `RequestRefreshAsync` and `RequestDefinitionRefreshAsync` cross as `variables`/`refresh`, the latter with `definitionIds`; requests are merged while one is on its way (a request for every variable covers requests for some), and a Macro Deck that predates them makes them a no-op, or reads every variable for a definition refresh. `NotifyDeclarationsChangedAsync` is a `state.update` for `variables`. |
+| Recording variable bindings (`IVariableApi.BindAsync`) | Yes | Differs | A plugin's bindings cross as `variables`/`bind`, at most 512 per call; an invalid request is an `ArgumentException` either way. A Macro Deck that predates it reports `NotSupportedException`. |
+| Integration storage (`IIntegrationStorage`) | Yes | Differs | Same keys, copies and read outcomes. A built-in integration's documents are under the host's data directory and travel with the Integrations part of a backup; a plugin's are under `integration-data/<plugin id>/` in its own data directory, are never crossed over the protocol, and a plugin without a data directory reads every key as missing and cannot write. See [Integration storage](https://docs.macro-deck.app/features/integration-storage/). |
+| Music players of every provider (`IIntegrationContext.MusicPlayers`) | Yes | Differs | A plugin reads `Instances` from the last `music-players` push, so it is empty until the host has pushed once; `GetAlbumColorAsync` crosses as `music-players`/`album-color`, shares the limit of four artwork lookups in flight, and answers `null` when the host refuses or predates it. A built-in integration reads the live list. See [Reading every provider's players](https://docs.macro-deck.app/features/music-players/#reading-every-providers-players). |
+| Time format (`IIntegrationContext.Locale`) | Yes | Differs | A plugin's call crosses as `locale`/`time-of-day-format`; a Macro Deck that predates it answers the plugin's current culture with a 24-hour clock. See [Formatting a time of day](https://docs.macro-deck.app/features/localization/#formatting-a-time-of-day). |
+| User-Agent (`IIntegrationContext.Http`, `IConfigFlowContext.Http`) | Yes | Differs | A plugin reads the last `http` push, so it reports the SDK default until the host has pushed once, or always on a Macro Deck that predates the push. See [Outgoing HTTP requests](https://docs.macro-deck.app/reference/plugin-hosting/#outgoing-http-requests). |
 | Macro Deck UI | Yes | Same | One provider contract: sessions, patch relay, limits and invalidation behave identically, `maxUiResourceBytes` bounds a real transfer, and payloads are relayed byte for byte. |
 
 ### Snapshot-backed state
@@ -1109,7 +1126,7 @@ macrodeck-plugin test --project src/HelloDeck
 ```
 
 ```text
-Macro Deck plugin conformance report (suite 1.2.0)
+Macro Deck plugin conformance report (suite 1.3.0)
 Plugin: com.example.hello-deck 1.0.0
 Started: 2026-09-12T10:27:14.6935280+00:00, duration: 00:00:20.8027253
 Passed: 25, Failed: 0, Skipped: 24
@@ -1248,6 +1265,14 @@ MDC0104-MDC0107 read the manifest, so they skip for any subject but an artifact.
 
 #### Capability serialization (MDC03xx)
 
+<a id="variables-precondition"></a>The variables checks (MDC0311, MDC0314, MDC0315 and [MDC0403](#mdc0403)) run when the subject has
+variables: it declares `variables`, or it declares nothing and `variables/describe` reports `variables`,
+`declaredVariables` or `supportsCatalog: true`. That is the rule the host uses to offer a plugin's
+variables, and it covers a provider with only a catalog or only on-demand variables, which declares no
+capability at all. Without a declaration they skip when `describe` answers `CAPABILITY_UNSUPPORTED` or any
+other error, does not reply within 5 s, returns something that is not a catalog, or describes nothing. A
+subject that declares `variables` and cannot answer `describe` fails them.
+
 | Id | Req | Checks | How to fix |
 | --- | --- | --- | --- |
 | <a id="mdc0301"></a>MDC0301 | R, guard | Every declared kind is in `CapabilityKinds.All`. | Declare only known kinds. |
@@ -1260,11 +1285,11 @@ MDC0104-MDC0107 read the manifest, so they skip for any subject but an artifact.
 | <a id="mdc0308"></a>MDC0308 | R | The `ui/describe` reply is within 256 KiB and deserializes into `UiDescribePayload`; skips without ui. | Keep the surface list small. |
 | <a id="mdc0309"></a>MDC0309 | R | For each action reporting `ProvidesState`, `state` returns an `ActionStateResult` whose present snapshot has a non-empty `States` list with non-empty unique ids and an `ActiveStateId` naming one of them; `null` passes. | Return a consistent snapshot, or `null` when nothing is known. |
 | <a id="mdc0310"></a>MDC0310 | R | Every returned state id passes `MacroDeckId.TryValidateLocalId(_, LocalIdKind.Declared)`, as a button persists it; skips without `ProvidesState`. | Use declared-id grammar for state ids. |
-| <a id="mdc0311"></a>MDC0311 | R | `variables/discover` answers within 5 s with at most `MaxVariableCatalogPageSize` items, each with a known `VariableType` and a resource id without `::` and within `MacroDeckId.MaxResourceLocalIdLength`, and any `ContinuationToken` non-empty; skips without variables or with `supportsCatalog: false`, and **fails** if `describe` cannot be answered. | Page and bound the catalog. |
+| <a id="mdc0311"></a>MDC0311 | R | `variables/discover` answers within 5 s with at most `MaxVariableCatalogPageSize` items, each with a known `VariableType` and a resource id without `::` and within `MacroDeckId.MaxResourceLocalIdLength`, and any `ContinuationToken` non-empty; skips without [variables](#variables-precondition) or with `supportsCatalog: false`, and **fails** if `variables` is declared and `describe` cannot be answered. | Page and bound the catalog. |
 | <a id="mdc0312"></a>MDC0312 | R | For each action reporting `ProvidesIcon`, a `NoIcon` snapshot has no `Reference` and an empty `Version`, and any other has a non-empty `Version` and a `Reference` with non-empty `Type` and `Reference`; `HasValue: false` passes. | Return an internally consistent icon snapshot. |
 | <a id="mdc0313"></a>MDC0313 | R | A non-`NoIcon` snapshot with no `Reference` answers `icon.content` with a non-empty `ContentHash` and an `image/*` `MediaType`, reports its `Version` has moved on, or fails only with `AssetTooLarge`; skips without `ProvidesIcon`. | Serve the icon bytes you advertise. |
-| <a id="mdc0314"></a>MDC0314 | R | For each eager variable declaring `write`, writing its current reading back through `variables/set` succeeds as an invocation with a status other than `NotWritable` or `NotFound`; skips when nothing declares `write`, inconclusive when every writable variable reads unavailable. | Declare `write` only on variables you accept writes for. |
-| <a id="mdc0315"></a>MDC0315 | R | `variables` and `declaredVariables` together hold at most `VariableLimits.MaxEagerVariablesPerProvider` eager entries, counted across the whole plugin; skips without variables. | Move the rest into a catalog. |
+| <a id="mdc0314"></a>MDC0314 | R | For each eager variable declaring `write`, writing its current reading back through `variables/set` succeeds as an invocation with a status other than `NotWritable` or `NotFound`; skips without [variables](#variables-precondition) or when nothing declares `write`, inconclusive when every writable variable reads unavailable. | Declare `write` only on variables you accept writes for. |
+| <a id="mdc0315"></a>MDC0315 | R | `variables` and `declaredVariables` together hold at most `VariableLimits.MaxEagerVariablesPerProvider` eager entries, counted across the whole plugin; skips without [variables](#variables-precondition). | Move the rest into a catalog. |
 
 #### Duplicate ids (MDC04xx)
 
@@ -1272,7 +1297,7 @@ MDC0104-MDC0107 read the manifest, so they skip for any subject but an artifact.
 | --- | --- | --- | --- |
 | <a id="mdc0401"></a>MDC0401 | R, guard | No `(Kind, LocalId)` pair repeats among declared capabilities. | Rename one. |
 | <a id="mdc0402"></a>MDC0402 | R | No `Id` repeats in `weather/instances`; skips without weather. | Keep instance ids unique. |
-| <a id="mdc0403"></a>MDC0403 | R | No two eager variables resolve to the same local id, or to the same identity derived from `Name` when neither declares one; catalog ids are out of scope; skips without variables. | Give each eager variable its own id. |
+| <a id="mdc0403"></a>MDC0403 | R | No two eager variables resolve to the same local id, or to the same identity derived from `Name` when neither declares one; catalog ids are out of scope; skips without [variables](#variables-precondition). | Give each eager variable its own id. |
 
 #### Timeout and cancellation (MDC05xx)
 
@@ -1318,7 +1343,7 @@ MDC0104-MDC0107 read the manifest, so they skip for any subject but an artifact.
 
 | Member | Type |
 | --- | --- |
-| `SuiteVersion` | `string` (currently `1.2.0`) |
+| `SuiteVersion` | `string` (currently `1.3.0`) |
 | `PluginId`, `PluginVersion` | `string?` |
 | `StartedAt` | `DateTimeOffset` |
 | `Duration` | `TimeSpan` |
@@ -1332,7 +1357,7 @@ JSON is camelCase, indented, with string enums (trimmed):
 
 ```json
 {
-  "suiteVersion": "1.2.0",
+  "suiteVersion": "1.3.0",
   "pluginId": "com.example.hello-deck",
   "pluginVersion": "1.0.0",
   "startedAt": "2026-09-12T10:27:59.604661+00:00",
@@ -1365,7 +1390,7 @@ Markdown (trimmed):
 ```md
 # Macro Deck plugin conformance report
 
-Suite version: `1.2.0`
+Suite version: `1.3.0`
 Plugin: `com.example.hello-deck` `1.0.0`
 Conformant: **yes**
 Passed: 25 - Failed: 0 - Skipped: 24
@@ -1606,14 +1631,15 @@ Recommended. Array of unique strings. Known vocabulary, one per host callback su
 
 | Group | Permissions |
 | --- | --- |
-| Host | `host:variables`, `host:user-variables`, `host:config`, `host:deck`, `host:scripts`, `host:widgets`, `host:notifications` (also covers interactive notifications), `host:action-interactions`, `host:devices`, `host:variable-values`, `host:layouts`, `host:folder-views`, `host:widget-types`, `host:event-bindings`, `host:screensavers`, `host:adb`, `host:messaging`, `host:video-streams` |
+| Host | `host:variables`, `host:user-variables`, `host:config`, `host:deck`, `host:scripts`, `host:widgets`, `host:notifications` (also covers interactive notifications), `host:action-interactions`, `host:devices`, `host:variable-values`, `host:layouts`, `host:folder-views`, `host:widget-types`, `host:event-bindings`, `host:screensavers`, `host:adb`, `host:messaging`, `host:video-streams`, `host:companion-devices` |
 | Other | `events:publish`, `assets:upload`, `net:outbound`, `fs:user-files`, `process:spawn`, `device:usb` |
 
 - Unknown permission: warning (`unknown-permission`), still installs. Not an enum on purpose.
 - Duplicate: rejected.
-- **Declared, validated, persisted and exposed.** The host enforces only `host:adb`: an installed plugin
-  that does not declare it cannot use the `adb` host API, see [Android devices](https://docs.macro-deck.app/features/android-devices/).
-  Every other permission is enforced nowhere. See
+- **Declared, validated, persisted and exposed.** The host enforces only `host:adb` and
+  `host:companion-devices`: an installed plugin that does not declare one cannot use the `adb` or the
+  `companion-devices` host API, see [Android devices](https://docs.macro-deck.app/features/android-devices/) and
+  [Companion devices](https://docs.macro-deck.app/features/companion-devices/). Every other permission is enforced nowhere. See
   [the security model](https://docs.macro-deck.app/policies/security/#permissions-declared-not-enforced).
 
 ### `languages`
@@ -2149,6 +2175,41 @@ action interactions. Out of process these are protocol calls or cached protocol 
 event-driven designs to tight loops over host APIs. See [Capabilities](https://docs.macro-deck.app/features/) and
 [Capability parity](https://docs.macro-deck.app/reference/capability-parity/).
 
+`Storage` is the exception: it never crosses the protocol. The SDK keeps the documents itself under
+`integration-data/<plugin id>/` in `DataDirectory`, so they survive updates and rollbacks like the rest of
+that directory. A plugin started without a data directory, such as one run outside a supervisor without
+`MACRO_DECK_PLUGIN_DATA_DIRECTORY`, reads every key as missing and gets an `InvalidOperationException` from
+a write. See [Integration storage](https://docs.macro-deck.app/features/integration-storage/).
+
+#### Outgoing HTTP requests
+
+Users can set the User-Agent Macro Deck sends in its network settings, and some services filter on it.
+Send `context.Http.UserAgent` with every HTTP request and WebSocket handshake your integration makes, and
+read it per request, because the user can change it while the plugin runs. A config flow, which may run
+before the integration was ever initialized, gets the same value from `IConfigFlowContext.Http`.
+
+```csharp
+public sealed class UserAgentHandler(IHostHttp http) : DelegatingHandler(new SocketsHttpHandler())
+{
+	protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+	{
+		if (request.Headers.UserAgent.Count == 0)
+		{
+			request.Headers.TryAddWithoutValidation("User-Agent", http.UserAgent);
+		}
+
+		return base.SendAsync(request, cancellationToken);
+	}
+}
+
+// In InitializeAsync:
+_client = new HttpClient(new UserAgentHandler(context.Http));
+```
+
+Out of process the value comes from the host's `http` `host.state` push, so it is the SDK default,
+`MacroDeck/` and the SDK version, until the first push arrives, and always on a Macro Deck that predates the
+push. In process it is the live setting. `IHostHttp` is also registered for dependency injection.
+
 ### Reserved routes
 
 | Route | Answers |
@@ -2376,7 +2437,7 @@ are listed in the descriptor's `capabilityKinds`:
 `actions`, `events`, `variables`, `icons`, `config-flow`, `music-player`, `weather`,
 `virtual-profiles`, `issues`, `ui`, `localization`, `device-provider`, `layout-provider`,
 `folder-view-provider`, `migration`, `widget-type-provider`, `screensaver-provider`, `messaging`,
-`video-stream-provider`, `calendar`.
+`video-stream-provider`, `calendar`, `config-entries`, `battery-provider`, `email-inbox`.
 
 - **Do not invent operation names inside an existing kind.** Additions to the operation vocabulary are
   compatibility-sensitive protocol changes. Exact operations and payloads are in the protocol package
@@ -2396,6 +2457,21 @@ are listed in the descriptor's `capabilityKinds`:
 - `calendar` was added as a new kind at capability version `1`, additively in major `3`. A host that
   predates it rejects the declaration non-fatally (`accepted: false`) and the session goes on without it.
   Its operations and reply limits are in the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#calendar).
+- `config-entries` was added as a new kind at capability version `1`, additively in major `3`, for a
+  plugin taking part in how the host stores its configuration entries. A host that predates it rejects the
+  declaration non-fatally and stores entries as it always did. See the
+  [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#config-entries). Its `prepare` later gained the optional
+  `rejectedVariableNames` argument and `retryOnConflict` result field, and a `config-flow` `Complete` result
+  the optional `withoutEntry` flag, all within capability version `1`: a peer that predates them leaves them
+  out and the other side behaves as before.
+- `battery-provider` was added as a new kind at capability version `1`, additively in major `3`, together
+  with the `batteries` host API. Its only operation is `describe`; devices travel the other way - see
+  [`batteries`](https://docs.macro-deck.app/reference/websocket/#batteries) and [Batteries](https://docs.macro-deck.app/features/batteries/).
+- `email-inbox` was added as a new kind at capability version `1`, additively in major `3`. A host that
+  predates it rejects the declaration non-fatally and the session goes on without it. For this kind only,
+  `state.update` with a `localId` names an inbox, not a declared capability: that inbox's content or status
+  changed, and the host reads its `snapshot` again instead of re-describing the kind. Its operations and
+  reply limits are in the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#email-inbox).
 
 See [capabilities](https://docs.macro-deck.app/features/) and [Capability parity](https://docs.macro-deck.app/reference/capability-parity/).
 
@@ -2414,6 +2490,20 @@ maps these to `IIntegrationContext`. Some synchronous-looking SDK state is serve
 `host.state` snapshot, so check [Capability parity](https://docs.macro-deck.app/reference/capability-parity/) before assuming
 in-process timing.
 
+`variables` gained `refresh`, `history.open`, `history.read`, `history.close` and `bind`, `widgets` gained
+`get-data`, `ui` gained `origin.report-failure` and `origin.show-modal`, and the `weather` api with
+`snapshots-changed` was added, additively in major `3`. A host
+that predates them answers `CAPABILITY_UNSUPPORTED`, which `MacroDeck.Plugin.Hosting` turns into a no-op,
+`false`, no widget data, an unsupported variable history, a `NotSupportedException` for bindings or a
+cancellation. `refresh` later gained an optional `definitionIds` argument, which a host that predates it
+ignores, reading every declared variable instead.
+
+The `locale` host API (`time-of-day-format`) and the push-only `http` host API were added the same way. A
+host that predates `locale` answers `CAPABILITY_UNSUPPORTED`, which `MacroDeck.Plugin.Hosting` turns into the
+plugin's current culture with a 24-hour clock; a host that predates `http` pushes nothing, so the SDK reports
+its default User-Agent. Integration storage is not a host API: the SDK keeps it in the plugin's own data
+directory.
+
 The `deck` snapshot carries `folders`, `profiles`, `clients` and `revision`. Each entry in `clients` is one
 connected client with `clientId`, `deviceId` (absent for a client that is not a paired device), `profileId`
 and `folderId`. `revision` increases with every `deck` push within one host run and starts again when the
@@ -2421,11 +2511,25 @@ host restarts; hosts that predate it omit both fields, which read as an empty li
 arrive out of order, so apply one only when its revision is higher than the last one applied in this
 session, always apply revision 0, and reset the last applied revision when a session is not resumed.
 
-The `adb` snapshot, pushed per plugin, follows the same revision rule. It is the only host API a plugin
-may be refused by its manifest: see [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#adb).
+The `adb` snapshot, pushed per plugin, follows the same revision rule. It is one of the two host APIs a
+plugin may be refused by its manifest: see [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#adb).
 
-A callback can return bytes: an icon from the `devices` api's `icon` operation, or a widget's rendered
-action icon from its `widget-icon` operation. These travel over `host.asset.*`, a host-to-plugin
+The `companion-devices` host API (`wait`, `send`, `request`, `screenshot`) is the other, gated by
+`host:companion-devices` and the user's consent, and was added additively in major `3` with its own per-plugin
+snapshot under the same revision rule. A host that predates it answers `CAPABILITY_UNSUPPORTED` and pushes
+nothing, which `MacroDeck.Plugin.Hosting` reports as access `Unsupported`, a send that answers `false` and a
+request or screenshot that fails as not connected; an older plugin ignores the push. See
+[`companion-devices`](https://docs.macro-deck.app/reference/websocket/#companion-devices) and
+[Companion devices](https://docs.macro-deck.app/features/companion-devices/).
+
+The `music-players` host API (`album-color`) was added the same way, with a snapshot of every provider's
+players that every plugin receives under the same revision rule. It is not gated. A host that predates it
+answers `CAPABILITY_UNSUPPORTED` and pushes nothing, which `MacroDeck.Plugin.Hosting` reports as no players
+and no colour; an older plugin ignores the push. See [`music-players`](https://docs.macro-deck.app/reference/websocket/#music-players).
+
+A callback can return bytes: an icon from the `devices` api's `icon` operation, a widget's rendered
+action icon from its `widget-icon` operation, an Android screenshot from the `adb` api's `screenshot`
+operation, or a Companion device's screenshot from the `companion-devices` api's `screenshot` operation. These travel over `host.asset.*`, a host-to-plugin
 pipeline kept separate from the plugin-to-host `asset.*` types so those keep their major-1 direction.
 See [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#assets).
 
@@ -2476,8 +2580,10 @@ keyed by `code`; localise from the code. `details` is a string-to-string map, at
 | `ICON_PACK_INVALID` | The icon pack archive is not usable. |
 | `ICON_PACK_SYNC_NOT_ALLOWED` | Only a self-registered development session can sync bundled icon packs. |
 | `ICON_NOT_FOUND` | No installed icon pack contains an icon with this id. |
+| `COMPANION_DEVICES_NOT_ALLOWED` | This plugin is not allowed to use Companion devices. |
 
-The list is append-only within a major. The three `ADB_*` codes answer only the `adb` host API; see
+The list is append-only within a major. The three `ADB_*` codes answer only the `adb` host API, and
+`COMPANION_DEVICES_NOT_ALLOWED` only the `companion-devices` host API; see
 [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#adb). A `reason` in `details` refines a deliberately generic
 code, for example `developer_mode_disabled`, `host_locked`, one of the `adb_` reasons of `ADB_FAILED`, or
 one of the `video_stream_` reasons of `CAPABILITY_UNAVAILABLE` (see
@@ -3071,18 +3177,20 @@ Capabilities are first declared on the `POST /api/plugins/sessions` request; `ca
 
 | Shape | Field | Type | Required | Meaning |
 | --- | --- | --- | --- | --- |
-| `DeclaredCapability` | `kind` | string | yes | One of the twenty kinds below. |
+| `DeclaredCapability` | `kind` | string | yes | One of the twenty-three kinds below. |
 | | `localId` | string | yes | The capability's id within the plugin. |
 | | `versionRange` | `{minimum, maximum}` | yes | Integer capability versions the plugin serves. |
 | | `displayName` | string | no | Human-readable name. |
 | `CapabilityNegotiationResult` | `kind` | string | yes | The kind negotiated. |
-| | `accepted` | boolean | yes | Whether the session will use it. |
+| | `accepted` | boolean | yes | Whether the session will use it. `variables` can also be used without being declared, see below. |
 | | `negotiatedVersion` | integer | no | The agreed capability version. |
 | | `rejectionReason` | string | no | Why it was rejected. |
 
 Negotiation fails **non-fatally**: an unsupported or unknown kind comes back rejected with a reason, and the session proceeds degraded.
 
-The twenty `kind` values: `actions`, `events`, `variables`, `icons`, `config-flow`, `music-player`, `weather`, `virtual-profiles`, `issues`, `ui`, `localization`, `device-provider`, `layout-provider`, `folder-view-provider`, `migration`, `widget-type-provider`, `screensaver-provider`, `messaging`, `video-stream-provider`, `calendar`. `operation` comes from a fixed vocabulary per kind - see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). Two more captured invokes:
+One kind is used without being negotiated: when a session declared no `variables` capability, the host still sends `variables`/`describe` while it registers the plugin (with a 5 second deadline), because a provider with only a catalog or only on-demand variables has nothing to declare. When the answer carries variables or a catalog, the session uses `variables` from then on. A plugin without the capability answers `CAPABILITY_UNSUPPORTED`, as for any kind it does not implement. A `variables` capability that was declared and rejected stays unused.
+
+The twenty-three `kind` values: `actions`, `events`, `variables`, `icons`, `config-flow`, `music-player`, `weather`, `virtual-profiles`, `issues`, `ui`, `localization`, `device-provider`, `layout-provider`, `folder-view-provider`, `migration`, `widget-type-provider`, `screensaver-provider`, `messaging`, `video-stream-provider`, `calendar`, `config-entries`, `battery-provider`, `email-inbox`. `operation` comes from a fixed vocabulary per kind - see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). Two more captured invokes:
 
 ```json
 {"type":"capability.invoke","id":"01a09528-bc57-7b85-bed4-952327ffedcd",
@@ -3139,6 +3247,42 @@ An account id the plugin does not know is `CAPABILITY_UNAVAILABLE`, and a failed
 
 The reply caps are fixed in `ProtocolLimits` rather than advertised, and `MacroDeck.Plugin.Hosting` applies them for you: `maxCalendarReplyBytes` (192 KiB) bounds an `events` or `event` reply, and an `events` reply that would exceed it drops its latest events and sets `truncated`. Titles, calendar names and participant names and emails are cut to `maxCalendarTitleLength` (256), a location to `maxCalendarLocationLength` (512) and a description to `maxCalendarDescriptionLength` (16 KiB); a meeting URL longer than `maxCalendarMeetingUrlLength` (2048) is dropped, because a cut URL would not work, and an event carries at most `maxCalendarParticipants` (100) participants. See [Calendars](https://docs.macro-deck.app/features/calendars/) and `MacroDeck.Plugin.Protocol.Capabilities.Calendar`.
 
+##### `email-inbox`
+
+Provider-shaped, like `calendar`: one capability at the local id `provider`, whatever the number of inboxes. Inboxes come and go with the plugin's configuration, so `snapshot` names the inbox in its arguments. All three operations are `capability.invoke`.
+
+| Operation | Arguments | Result | Meaning |
+| --- | --- | --- | --- |
+| `describe` | none | `providerName`, `inboxes` | The provider name and the inboxes (`id`, `displayName`, `address`). The host keeps them as the snapshot behind `GetInboxes()`. |
+| `inboxes` | none | `inboxes` | The same inbox list on its own. The host reads it after a `state.update` for the kind without a `localId`. |
+| `snapshot` | `inboxId`, `maxMessages` (default 10), `unreadOnly` | `status`, `statusMessage`, `unreadCount`, `totalCount`, `messages`, `syncedAt`, `truncated` | One inbox's state. `messages` are newest first: `id`, `senderName`, `senderAddress`, `subject`, `preview`, `receivedAt`, `isRead`. With `unreadOnly`, the newest unread messages wherever they are in the inbox. |
+
+An inbox id the plugin does not know is `CAPABILITY_UNAVAILABLE`, and a failed read is a failed invoke, never an empty result. `status` is an `EmailInboxStatus` member name as a string (`Connecting`, `Connected`, `Disconnected`, `Error`); a reader treats a name it does not know as `Disconnected`.
+
+A `state.update` for this kind reads `localId` differently from every other kind: it is an inbox id, and it means that inbox's messages, counts or status changed, so the host reads its `snapshot` again and nothing else. Without a `localId`, the inbox list changed and the host reads `inboxes`. `MacroDeck.Plugin.Hosting` sends both when the provider raises `Changed`, held back 250 ms per inbox so a burst becomes one message.
+
+The reply caps are fixed in `ProtocolLimits` rather than advertised, and `MacroDeck.Plugin.Hosting` applies them for you: `maxEmailInboxReplyBytes` (192 KiB) bounds every reply, and a `snapshot` reply that would exceed it drops its oldest messages and sets `truncated`. `maxMessages` is clamped to 1 to `maxEmailMessages` (50), a reply carries at most `maxEmailInboxes` (32) inboxes, and a subject or status message is cut to `maxEmailSubjectLength` (512), a preview to `maxEmailPreviewLength` (280) and a sender name or address and an inbox's display name or address to `maxEmailSenderLength` (320). See [Email inboxes](https://docs.macro-deck.app/features/email-inboxes/) and `MacroDeck.Plugin.Protocol.Capabilities.EmailInbox`.
+
+##### `config-entries`
+
+Provider-shaped: one capability at the local id `provider`. The host invokes it while it stores the plugin's configuration entries, one change at a time: `prepare`, then after storing `reload` and `synchronize`, and `release` last whether or not the entry was stored. An entry travels as `id`, `title`, `createdAt` and `values`; a secret field holds the reference to the encrypted value.
+
+| Operation | Arguments | Result | Meaning |
+| --- | --- | --- | --- |
+| `describe` | none | none | Confirms the provider exists. |
+| `prepare` | `entryId`, `title`, `values`, `existing` (nullable), `siblings`, `titleChanged`, `rejectedVariableNames` (optional) | `success`, `values` (nullable), `error`, `reservedVariables`, `retryOnConflict` (optional) | Checks and adjusts an entry about to be stored. `values` replaces the stored values when present. `reservedVariables` (`name`, `definitionId`, `type`) are global variable names the host holds for the entry until `release`; a name another integration's variable or preparation holds refuses the entry, unless the result set `retryOnConflict`: then the host sends `prepare` again with every name it could not hold so far in `rejectedVariableNames`, up to 32 attempts. |
+| `status` | `entry` | `status` | A `ConfigEntryStatus` member name; a name the host does not know reads as `Ready`. |
+| `usable` | `entry` | `usable` | Whether the entry can be used as stored. |
+| `reload` | none | `reloaded` | Applies the stored change in the running plugin. `false` makes the host re-initialize the integration. |
+| `synchronize` | `entries` | none | Every stored entry, after each change. |
+| `release` | `entryId` | none | The change the preparation was for has ended. |
+
+`rejectedVariableNames` and `retryOnConflict` are optional and left out when unused: a host that predates them never retries, and a plugin that predates them never asks to. `synchronize` is the same operation for both `SynchronizeEntriesAsync` overloads; `MacroDeck.Plugin.Hosting` calls the one that takes the plugin's own variable api.
+
+A `Complete` result of the `config-flow` operation `flow.submit` may carry `withoutEntry: true` for `ConfigFlowResult.CompleteWithoutEntry()`: the host closes the flow and stores nothing. A host that predates the field reads a plain `Complete` without a title and stores an entry from the collected values.
+
+A failed or timed-out invoke counts as the default: the entry is stored as the flow completed it, the entry reads `Ready` and usable, and the integration is re-initialized. See [Taking part in storing an entry](https://docs.macro-deck.app/features/setup-flows/#taking-part-in-storing-an-entry) and `MacroDeck.Plugin.Protocol.Capabilities.ConfigEntries`.
+
 #### Host callbacks
 
 ```json
@@ -3158,7 +3302,7 @@ The reply caps are fixed in `ProtocolLimits` rather than advertised, and `MacroD
 | `host.cancel` | plugin → host | `reason` - best-effort cancellation of a `host.invoke` |
 | `host.state` | host → plugin | `api` (required), `data` - the list a plugin's synchronous members serve from |
 
-APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `notifications`, `action-interactions`, `ui`, `devices`, `variable-values`, `layouts`, `folder-views`, `widget-types`, `screensavers`, `adb`, `messaging`, `icon-packs`, `video-streams`, `colors`, and the push-only `event-bindings`. There is no `events` api; use `event.publish`. A plugin ignores a `host.state` api it does not know.
+APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `notifications`, `action-interactions`, `ui`, `devices`, `variable-values`, `layouts`, `folder-views`, `widget-types`, `screensavers`, `adb`, `messaging`, `icon-packs`, `video-streams`, `colors`, `batteries`, `weather`, `locale`, `companion-devices`, `music-players`, and the push-only `event-bindings` and `http`. There is no `events` api; use `event.publish`. A plugin ignores a `host.state` api it does not know.
 
 `host.state` for `config` has no `data`: it means "your config changed, re-read it". Built from the schema:
 
@@ -3170,8 +3314,9 @@ APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `no
 | --- | --- |
 | `action-interactions` | `show-modal` answers with a modal id as soon as the modal opens; the user's answer arrives later as a `ui`/`modal.result` `capability.invoke` naming that modal. Exactly one result per modal. |
 | `notifications` | `show` answers with the notification id as soon as it is open; how it ended arrives later as a `ui`/`notification.result` `capability.invoke` (`notificationId`, `closeReason`, `actionId`, `clientId`, `values`), exactly once per notification. `update` and `close` name the id and only reach the plugin's own notifications. A result the plugin could not take while detached is sent after it reattaches. `notify` and `dismiss` are unchanged - see [Notifications](https://docs.macro-deck.app/features/notifications/). |
-| `widgets` | Payload differs by protocol major - see below. |
-| `ui` | Not charged to the per-plugin callback throttle. `snapshot`, `patch` and `fault` are bounded per session by `maxUiUpdatesPerSecond` / `maxUiUpdateBurst`; `reload` ends its session, and one for a session that already ended is ignored; `register-resource`, `remove-resource` and `register-music-player-artwork` have their own per-plugin rate limit, and `register-music-player-artwork` a tighter one on top. |
+| `widgets` | The `apply` payload differs by protocol major - see below. `get-data` (`widgetId`) answers `widgetId`, `widgetTypeId` and the stored `data` of a widget whose type the plugin registered, and no result for any other widget. |
+| `ui` | Not charged to the per-plugin callback throttle, except `origin.report-failure` and `origin.show-modal`, which put something on a user's screen. `snapshot`, `patch` and `fault` are bounded per session by `maxUiUpdatesPerSecond` / `maxUiUpdateBurst`; `reload` ends its session, and one for a session that already ended is ignored; `register-resource`, `remove-resource` and `register-music-player-artwork` have their own per-plugin rate limit, and `register-music-player-artwork` a tighter one on top. |
+| `variables` | `refresh` without arguments makes the host read every declared variable of the plugin on its next poll; with `definitionIds` (at most `maxVariableRefreshDefinitionIds`) only those. Requests that arrive while one is pending are merged. A host that predates it answers `CAPABILITY_UNSUPPORTED`, which the SDK treats as a no-op, and a host that predates `definitionIds` ignores them and reads every declared variable. `bind` (`bindings`: `localResourceId`, `name`, `type`, optional `decimalPlaces` and `migratedFrom`, at most `maxVariableBindingsPerCall`) records bindings from the plugin's own catalog resources to variables, owned by the calling plugin, all or nothing, and answers `outcomes`, one `bound` or `already-bound` per binding in request order; an invalid name, resource id or type answers `INVALID_PAYLOAD`, and a store that cannot be read or written `INTERNAL_ERROR`. `history.open` (`name`, `capacity`) opens a window on one of the plugin's own global variables and answers its `windowId`; a name that is not the plugin's own answers `INVALID_PAYLOAD`, and too many open windows `CAPABILITY_UNAVAILABLE`. `history.read` (`windowId`) answers the `values`, oldest first, and is not charged to the per-plugin callback throttle; `history.close` (`windowId`) closes it. A plugin's windows end with its connection. |
 | `variable-values` | Data-carrying push for the catalog half only; eager variables are always polled via `variables`/`get`. |
 | `event-bindings` | Push-only `host.state`, no `host.invoke` operations. `data` lists the triggers bound to this plugin's own events, each an `eventId` and `parameters` keyed by name (`value`, absent for a state operator, and `operator`). Sent on registration and whenever that list changes. |
 | `adb` | Gated per plugin, runs off the session's dispatch loop, at most 4 calls in flight per plugin - see [`adb`](#adb). |
@@ -3179,6 +3324,12 @@ APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `no
 | `messaging` | Needs the `messaging` capability kind; own rate limit instead of the per-plugin callback throttle; `send` and `request` run off the session's dispatch loop - see [`messaging`](#messaging). |
 | `video-streams` | Only for sessions the host opened on the calling plugin's own providers; own rate limit instead of the per-plugin callback throttle - see [`video-streams`](#video-streams). |
 | `colors` | `resolve` takes `value` and an optional `widgetId` and answers `color`, absent for no colour; only Color variables resolve. `watches` replaces the plugin's whole table of `{watchId, value, widgetId?}`, at most `maxColorWatches`, and the host pushes a `host.state` for `colors` with `revision` and every watch's `{watchId, color?}` after each table change and each change of a watched colour; a push at or below the last applied `revision` is stale. A host without the api answers `CAPABILITY_UNSUPPORTED`. See [Resolving colours yourself](https://docs.macro-deck.app/features/variables/#resolving-colours-yourself). |
+| `batteries` | Needs the `battery-provider` capability kind to publish; the `host.state` push goes to every plugin - see [`batteries`](#batteries). |
+| `weather` | Needs the `weather` capability kind - see [`weather`](#weather). |
+| `locale` | `time-of-day-format` takes no arguments and answers `culture`, the culture name of the Macro Deck interface, and `hourCycle`, `h12` or `h23`: the user's time format setting, or the operating system's when it follows the system. A plugin maps a culture it cannot load or an hour cycle it does not know to its current culture and `h23`. A host without the api answers `CAPABILITY_UNSUPPORTED`. See [Formatting a time of day](https://docs.macro-deck.app/features/localization/#formatting-a-time-of-day). |
+| `companion-devices` | Gated per plugin, runs off the session's dispatch loop, at most 4 calls in flight per plugin - see [`companion-devices`](#companion-devices). |
+| `music-players` | Not gated: every plugin reads every provider's players. `album-color` runs off the session's dispatch loop and shares the limit of 4 artwork lookups in flight per plugin - see [`music-players`](#music-players). |
+| `http` | Push-only `host.state`, no `host.invoke` operations. `data` carries `userAgent`, the User-Agent the user configured or the host's default, sent on registration and whenever the user changes it. See [Outgoing HTTP requests](https://docs.macro-deck.app/reference/plugin-hosting/#outgoing-http-requests). |
 
 ##### `widgets` by major
 
@@ -3204,13 +3355,15 @@ For a major `1` session the host translates rather than refuses: `off`/`on` map 
 | `reload` | `sessionId` | Your code for this session changed during development. The host ends the session without reporting a fault, and every client showing it opens it again, which asks your provider for a new session. The SDK sends it when .NET Hot Reload updates the plugin. A host that predates it answers `CAPABILITY_UNSUPPORTED`; the SDK then sends `fault` instead, which also makes clients reopen. |
 | `register-resource` | `name`, `contentHash`, `mediaType` | Registers bytes as a UI resource under a plugin-chosen name and answers a `resource` (`resourceId`, `contentHash`, `mediaType`, `byteLength`), or `uploadRequired: true` when the host does not hold those bytes for this plugin yet. |
 | `remove-resource` | `name` | Removes the named resource. An unknown name is not an error. |
-| `register-music-player-artwork` | `name`, `instanceId`, `artworkId` | Registers the artwork of any music player, named by its qualified instance id (`integrationId::instanceId`) and artwork id, as a UI resource under a plugin-chosen name. Needs no upload. Answers a `resource` like `register-resource`, or an empty result with no `resource` when the host knows no such player or artwork. |
+| `register-music-player-artwork` | `name`, `instanceId`, `artworkId`, optional `maxSize` | Registers the artwork of any music player, named by its qualified instance id (`integrationId::instanceId`) and artwork id, as a UI resource under a plugin-chosen name. With `maxSize`, the smallest copy the host keeps that is at least that many pixels on its longer side (128 or 256), or the full-size cover when none is. Needs no upload. Answers a `resource` like `register-resource`, or an empty result with no `resource` when the host knows no such player or artwork. |
+| `origin.report-failure` | `sessionId`, `clientId`, `eventName`, `message` | Shows `message` (localized text) on the client that raised an event in the session, as a failed action is shown. Answers `delivered`, `false` when the session is not the plugin's or the client is no longer attached to it. |
+| `origin.show-modal` | `sessionId`, `clientId`, `viewId`, `title`, `data`, `awaitResult` | Opens one of the plugin's dialogs on that client, under the same condition. Answers `opened` and `modalId`; with `awaitResult` the answer arrives later as a `ui`/`modal.result` `capability.invoke`, exactly as for `action-interactions`/`show-modal`. |
 
 `tree` and `patch` are opaque JSON: bounded, then forwarded byte-for-byte (unknown members, member order, number formatting survive). A refused snapshot or patch is an error on its own `host.result`: `PAYLOAD_TOO_LARGE`, `RATE_LIMITED`, `INVALID_PAYLOAD`, `SESSION_NOT_FOUND`. See [Serving a view](https://docs.macro-deck.app/ui/views/sessions/).
 
 To register a resource, call `register-resource` first. On `uploadRequired`, send the bytes as an `asset.*` upload of kind `ui-resource` with the same media type, then call `register-resource` once more; a second `uploadRequired` means the upload was lost, not that you should loop. Registering a name again replaces its bytes: the `resourceId` stays, the `contentHash` changes. Registering unchanged bytes under the same name answers the existing handle without an upload. Resources belong to the plugin session: they survive a resumed session, are released when the session ends or is replaced, and are gone after the host restarts. A refused registration is `INVALID_PAYLOAD` (name, media type, or a type that differs from the upload's), `UI_RESOURCE_QUOTA_EXCEEDED` (`maxUiResourceBytesPerPlugin` or `maxUiResourcesPerPlugin`; what the name held is unchanged), `RATE_LIMITED`, or `SESSION_NOT_FOUND` from a session that has been replaced. A host that predates the operations answers `CAPABILITY_UNSUPPORTED` before any bytes are sent. See [Resources](https://docs.macro-deck.app/ui/reference/resources/#registering-your-own-images).
 
-`register-music-player-artwork` registers the artwork with the same rules as `register-resource`: the resource belongs to the plugin session, counts against `maxUiResourceBytesPerPlugin` and `maxUiResourcesPerPlugin`, and registering a name again replaces it. The host may re-encode the image, so `mediaType` can differ from the player's. A refusal is `INVALID_PAYLOAD` (name, an `instanceId` or `artworkId` empty or over 512 characters, or artwork of a media type a UI resource cannot have; not retryable), `ASSET_TOO_LARGE` (artwork over `maxUiResourceBytes`), `UI_RESOURCE_QUOTA_EXCEEDED`, `RATE_LIMITED` (also when the plugin already waits on four lookups), `TIMEOUT` (the player did not answer within 20 seconds; retryable) or `SESSION_NOT_FOUND`. The host answers it off the session's dispatch loop, so the plugin's other callbacks are served while a slow player is asked. A host that predates the operation answers `CAPABILITY_UNSUPPORTED`.
+`register-music-player-artwork` registers the artwork with the same rules as `register-resource`: the resource belongs to the plugin session, counts against `maxUiResourceBytesPerPlugin` and `maxUiResourcesPerPlugin`, and registering a name again replaces it. The host may re-encode the image, so `mediaType` can differ from the player's. A refusal is `INVALID_PAYLOAD` (name, an `instanceId` or `artworkId` empty or over 512 characters, a `maxSize` that is not positive, or artwork of a media type a UI resource cannot have; not retryable), `ASSET_TOO_LARGE` (artwork over `maxUiResourceBytes`), `UI_RESOURCE_QUOTA_EXCEEDED`, `RATE_LIMITED` (also when the plugin already waits on four lookups), `TIMEOUT` (the player did not answer within 20 seconds; retryable) or `SESSION_NOT_FOUND`. The host answers it off the session's dispatch loop, so the plugin's other callbacks are served while a slow player is asked. A host that predates the operation answers `CAPABILITY_UNSUPPORTED`; one that predates `maxSize` ignores it and registers the full-size cover, at most 640 pixels on its longer side.
 
 ##### `icon-packs`
 
@@ -3270,6 +3423,16 @@ Operations on the Android devices the host's own adb server sees. Every operatio
 | `uninstall` | `serial`, `packageName` | none |
 | `package-installed` | `serial`, `packageName` | `installed` |
 | `connect` | `address` (`host:port`) | `serial` |
+| `key` | `serial`, `key` (`home`, `back`, `enter`, `menu`, `search`, `volume-up`, `volume-down`, `volume-mute`, `media-play-pause`, `media-next`, `media-previous`, `power`, `sleep`, `wakeup`, `app-switch`, `dpad-up`, `dpad-down`, `dpad-left`, `dpad-right`, `dpad-center`) | none |
+| `tap` | `serial`, `x`, `y` | none |
+| `swipe` | `serial`, `fromX`, `fromY`, `toX`, `toY`, `durationMilliseconds` | none |
+| `input-text` | `serial`, `text` | none |
+| `start-app` | `serial`, `packageName` | none |
+| `force-stop-app` | `serial`, `packageName` | none |
+| `open-uri` | `serial`, `uri` | none |
+| `reboot` | `serial`, `mode` (`normal`, `recovery`, `bootloader`; default `normal`) | none |
+| `screenshot` | `serial` | `contentType`, `byteLength`, `contentHash`, `transferId`; the PNG follows over `host.asset.*` |
+| `status` | `serial` | `screenOn`, `locked`, `foregroundPackage`, each optional; no `data` while the host has no reading yet |
 
 - **Access is per plugin.** An installed plugin needs `host:adb` in its manifest; a self-registered
   session does not. ADB must be enabled and the user must allow plugins to use it. A refused call fails
@@ -3285,15 +3448,22 @@ Operations on the Android devices the host's own adb server sees. Every operatio
 - **`connect`** runs `adb connect` for a host name or IPv4 address with a port and answers with the serial
   the device has from then on, which is its address. The device reaches every plugin through the `adb`
   `host.state` push. adb reporting that it could not connect is `ADB_FAILED` with `adb_command_failed`.
+- **The typed operations** (`key` to `status`) run fixed commands the host builds itself. An empty `serial`, an
+  unknown `key` or `mode`, or an argument outside the host's limits is `ADB_FAILED` with
+  `adb_invalid_argument` before adb runs. `screenshot` answers with metadata and sends the PNG over
+  `host.asset.*` with kind `android-screenshot` under `transferId`, like a `devices` icon; a screenshot over
+  `maxAssetBytes` is `ADB_FAILED` with `adb_command_failed`. `status` reads what the host sampled in the
+  background: the first call for a device starts sampling and answers with no `data`.
 - **While the host is locked**, `shell`, `push`, `pull`, `install`, `uninstall` and `connect` fail with a retryable
-  `CAPABILITY_UNAVAILABLE` and `details.reason: "host_locked"`. `battery` and `package-installed` still
-  answer.
+  `CAPABILITY_UNAVAILABLE` and `details.reason: "host_locked"`. `battery`, `package-installed` and the typed
+  operations still answer.
 - **A failure of adb or the device** is `ADB_FAILED`, refined by `details.reason`: `adb_executable_not_found`,
   `adb_server_unreachable`, `adb_device_not_found`, `adb_device_offline`, `adb_device_unauthorized`,
   `adb_timeout`, `adb_command_failed`, `adb_invalid_argument`, `adb_unsupported`. Treat an unknown reason as
   `ADB_FAILED` alone.
 - **The host's own time limit** is ten seconds for `battery` and `package-installed`, twenty seconds for
-  `connect`, one minute for `shell` and `uninstall`, and five minutes for `push`, `pull` and `install`. It ends in `ADB_FAILED` with
+  `connect`, ten seconds for the typed operations except `reboot` and `screenshot` (thirty seconds), one minute
+  for `shell` and `uninstall`, and five minutes for `push`, `pull` and `install`. It ends in `ADB_FAILED` with
   `adb_timeout`. Wait longer than that before giving up on the `host.result`, as the .NET SDK does.
 
 The `adb` `host.state` push is per plugin, sent on registration and whenever this plugin's access or the
@@ -3302,12 +3472,25 @@ device list changes. Its shape is
 
 ```json
 {"type":"host.state","id":"<uuid-v7>","payload":{"api":"adb","data":{"access":"available","revision":7,
- "devices":[{"serial":"R58M123","state":"online","model":"SM-G991B","manufacturer":"samsung","product":"o1s"}]}}}
+ "devices":[{"serial":"R58M123","state":"online","model":"SM-G991B","manufacturer":"samsung","product":"o1s",
+   "stableId":"3fa9c2d1e0b4a756"},{"serial":"0123ABCD","state":"unauthorized","lacksUsbPermission":true}],
+ "defaultDeviceSerial":"R58M123"}}}
 ```
 
 `access` is `available`, `adb-not-enabled` or `adb-not-allowed`; `devices` is empty unless it is
 `available`, and a device that left is simply absent. A device's `state` is `online`, `connecting`,
-`offline` or `unauthorized`. `revision` follows the same rule as the `deck` push: apply a push only when
+`offline` or `unauthorized`. The optional `stableId` is a keyed hash of the device's hardware serial,
+specific to this installation of Macro Deck and the same over USB and Wi-Fi; it is also the local id the
+built-in ADB battery provider publishes the device under, so a plugin with `host:adb` can match an adb
+device with its [`batteries`](#batteries) entry. It is absent from older hosts and until the host has read
+the serial, and the serial itself is never sent. The optional `lacksUsbPermission` is `true` for an
+`unauthorized` device the host's computer lacks the USB permissions for; a reader that ignores it still sees
+`unauthorized`. The optional `mode` of an `offline` device is `bootloader`, `recovery`, `sideload`, or
+`unknown` for a state adb reported that the host does not recognise; treat a value you do not know as
+`unknown`, and its absence as a device that is simply not answering. The optional `adbUnavailable` is `true`
+while `access` is `available` but the host cannot find the adb program. The optional `defaultDeviceSerial` names the device to use when none is chosen: the default
+device picked in the ADB settings, which can be absent from `devices` while it is away, or the only attached
+device when none is picked. Both are absent from older hosts. `revision` follows the same rule as the `deck` push: apply a push only when
 its revision is higher than the last one applied in this session. A host without this api never pushes it
 and answers every `adb` invoke with `CAPABILITY_UNSUPPORTED`.
 
@@ -3485,6 +3668,184 @@ with `CAPABILITY_UNAVAILABLE` and one of these reasons in `details.reason`; a fa
 | `video_stream_capacity_reached` | `CapacityReached` | yes |
 | `video_stream_busy` | `Busy` | yes |
 
+##### `batteries`
+
+```json
+{"type":"host.invoke","id":"<uuid-v7>","deadlineMs":10000,
+ "payload":{"api":"batteries","operation":"publish",
+   "arguments":{"devices":[{"id":"pad-1","name":"Headset","kind":"headphones","levelPercent":80,
+     "chargeState":"discharging","isConnected":true,"health":"good"}]}}}
+```
+
+A battery provider publishes its devices; the host keeps one catalog of every provider's devices and
+pushes it to every plugin. Argument shapes are in
+[`BatteriesInvokeArguments.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/protocol/src/MacroDeck.Plugin.Protocol/Callbacks/BatteriesInvokeArguments.cs),
+the pushed state in
+[`BatteryStateDto.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/protocol/src/MacroDeck.Plugin.Protocol/Callbacks/BatteryStateDto.cs).
+The SDK side is [Batteries](https://docs.macro-deck.app/features/batteries/).
+
+| Operation | Arguments | Result `data` | Meaning |
+| --- | --- | --- | --- |
+| `publish` | `devices` | none | Adds or replaces devices of the calling plugin, keyed by `id`. |
+| `remove` | `deviceIds` | none | Removes devices for good; readers see their ids in `removedIds`. Unknown ids are ignored. |
+| `sync` | `devices` | none | Replaces the calling plugin's whole set. Devices left out count as removed. The SDK sends it after a resumed reconnect. |
+| `withdraw` | none | none | Withdraws every device the calling session published: they leave the catalog without being listed in `removedIds`. The SDK sends it before it initializes a provider again within the same session, for example after a configuration change. |
+
+- **The owner is the calling plugin.** Nothing in the payload names it. A plugin that did not get the
+  `battery-provider` capability accepted is refused with `CAPABILITY_UNAVAILABLE`.
+- **All or nothing.** A device that fails validation, a duplicate id, or a set that would leave the plugin
+  with more than `maxBatteryDevicesPerProvider` (64) devices refuses the whole call with `INVALID_PAYLOAD`,
+  and nothing is applied. An `id` or `name` is at most 128 characters, a `kind` at most 32, and
+  `levelPercent` is 0 to 100 or absent.
+- **Open vocabularies.** `kind` is one of `phone`, `tablet`, `laptop`, `headphones`, `watch`, `controller`,
+  `mouse`, `keyboard`, `speaker`, `other`; `chargeState` one of `unknown`, `discharging`, `charging`,
+  `full`, `not-charging`; `health` one of `unknown`, `good`, `overheat`, `dead`, `over-voltage`, `cold`,
+  `failure`. A reader maps a value it does not know to `other` or `unknown`. Time estimates travel as
+  whole seconds, `timeRemainingSeconds` and `timeToFullSeconds`.
+- **The calls count toward the per-plugin callback throttle.** Beyond it is `RATE_LIMITED`.
+- **Devices go with the session.** When a plugin session ends, the host withdraws the devices that session
+  published: they leave the catalog without being listed in `removedIds`. `withdraw` does the same while
+  the session stays connected, and only for the calling session, so a late call from an ended session
+  never hides what its successor published. The SDK ignores a refused `withdraw`; the devices then stay
+  until the session ends.
+
+**`host.state` for `batteries`** is sent to every connected plugin, whether or not it declared
+`battery-provider`, on registration and after each change of the catalog. `data` carries `revision`,
+`devices` and `removedIds`. Each device has the published fields plus `id`, qualified as
+`<provider id>:<local id>`, `localId`, `providerId`, `providerName` and `updatedAt`. A push at or below the
+last applied `revision` in the same session is stale. `removedIds` lists the devices removed for good since
+the previous revision; a device absent from `devices` without being listed there was withdrawn and may
+return. A plugin that missed a revision may miss its removals, but `devices` is always complete.
+
+A host without this api answers every `batteries` invoke with `CAPABILITY_UNSUPPORTED`, sends no
+`batteries` state, and does not list `battery-provider` in the descriptor's `capabilityKinds`.
+
+###### The `battery-provider` capability kind
+
+Version 1, declared at local id `provider`. Its one operation is `describe`, which answers `providerName`;
+empty means the plugin's manifest name. DTOs are in
+[`BatteryProviderDtos.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/protocol/src/MacroDeck.Plugin.Protocol/Capabilities/BatteryProvider/BatteryProviderDtos.cs).
+
+##### `weather`
+
+```json
+{"type":"host.invoke","id":"<uuid-v7>","deadlineMs":10000,
+ "payload":{"api":"weather","operation":"snapshots-changed"}}
+```
+
+| Operation | Arguments | Result `data` | Meaning |
+| --- | --- | --- | --- |
+| `snapshots-changed` | none | none | The calling plugin's station snapshots changed: the host reads every station again now and pushes what changed to Weather widgets, instead of waiting for its periodic read (about once a minute). Notices that arrive while a read is pending are merged into it. |
+
+- A plugin that did not get the `weather` capability accepted is refused with `CAPABILITY_UNAVAILABLE`.
+- It does not announce a changed list of stations; that stays a `state.update` with kind `weather`.
+- The call counts toward the per-plugin callback throttle.
+- A host without this api answers `CAPABILITY_UNSUPPORTED` and keeps reading the stations on its own
+  interval. The SDK side, `IIntegrationContext.WeatherProvider`, ignores both refusals; see
+  [Weather](https://docs.macro-deck.app/features/weather/#telling-macro-deck-the-weather-changed).
+
+##### `companion-devices`
+
+```json
+{"type":"host.invoke","id":"<uuid-v7>","deadlineMs":150000,
+ "payload":{"api":"companion-devices","operation":"request",
+   "arguments":{"deviceId":"5d0c6a8e-3b1f-4c2a-9e57-0a1b2c3d4e5f","command":"setBrightness","brightnessPercent":10}}}
+```
+
+Commands and screenshots for the phones and tablets connected through the Companion app. Every operation
+names the device by `deviceId`, a GUID. Argument, result and state shapes are in
+[`CompanionDevicesDtos.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/protocol/src/MacroDeck.Plugin.Protocol/Callbacks/CompanionDevicesDtos.cs).
+The SDK side is [Companion devices](https://docs.macro-deck.app/features/companion-devices/).
+
+| Operation | Arguments | Result `data` |
+| --- | --- | --- |
+| `wait` | `deviceId` | `ready`: whether a device that has just connected reported its state within a few seconds |
+| `send` | `deviceId`, `command`, `brightnessPercent`, `orientation` | `sent`: `false` when the device is not connected |
+| `request` | `deviceId`, `command`, `brightnessPercent`, `orientation` | `outcome` (`done`, `unconfirmed`, `failed`) and, when failed, `failure` |
+| `screenshot` | `deviceId`, `mode` (`deck` or `full`; default `deck`) | `failure`, or `contentType`, `byteLength`, `contentHash`, `transferId`; the PNG follows over `host.asset.*` |
+
+- **Access is per plugin.** An installed plugin needs `host:companion-devices` in its manifest; a
+  self-registered session counts as declaring it. The user must allow plugins to use Companion devices,
+  which is off by default. A call while access is not `available` is refused with
+  `COMPANION_DEVICES_NOT_ALLOWED`. See [Companion devices](https://docs.macro-deck.app/features/companion-devices/#who-decides).
+- **Commands** are `setBrightness` (with `brightnessPercent`, 0 to 100), `setOrientation` (with
+  `orientation`: `automatic`, `portrait` or `landscape`), `vibrate`, `screenOn`, `screenOff` and `focus`. An
+  unknown command, a missing or out-of-range value, an unknown `mode` or a `deviceId` that is not a GUID is
+  `INVALID_PAYLOAD`.
+- **A device's failure is a result, not an error.** `failure` is `not-connected`, `removed`, `timed-out`,
+  `consent-denied`, `unavailable` or `failed`; treat a value you do not know as `failed`. `unconfirmed`
+  means the device accepted the command but did not confirm it in time.
+- **`request` and `screenshot` can wait** up to a minute for the device to accept, and then a few seconds
+  for a command's confirmation or up to a minute for a screenshot. Wait longer than that before giving up on
+  the `host.result`, as the .NET SDK does with about two and a half minutes.
+- **`screenshot`** answers with metadata and sends the PNG over `host.asset.*` with kind
+  `companion-screenshot` under `transferId`, like an `adb` screenshot. A PNG over `maxAssetBytes` answers
+  `failure: "failed"`. `full` can show a permission prompt on the device and answer `consent-denied`.
+- **At most 4 calls in flight per plugin.** A fifth is refused at once with a retryable `RATE_LIMITED`.
+  Calls also count toward the per-plugin callback throttle. Other host APIs keep flowing while a
+  `companion-devices` call runs.
+- **`host.cancel` ends an in-flight call.** It then gets exactly one `host.result`, with `CANCELLED`. A
+  cancelled `request` withdraws the command if the device has not accepted it yet.
+
+The `companion-devices` `host.state` push is per plugin, sent on registration and whenever this plugin's
+access or a device's state changes; a plugin that is not allowed is told so once, not on every device
+report. Its shape is `CompanionDevicesStateDto`:
+
+```json
+{"type":"host.state","id":"<uuid-v7>","payload":{"api":"companion-devices","data":{"access":"available","revision":12,
+ "devices":[{"deviceId":"5d0c6a8e-3b1f-4c2a-9e57-0a1b2c3d4e5f","readySequence":3,"batteryLevelPercent":80,
+   "charging":false,"orientation":"landscape","screenBrightnessPercent":60,"model":"SM-X200","platform":"Android 14",
+   "appVersion":"3.0.0","capabilities":["screenOff","screenshotDeck"],"requestableCapabilities":["screenOn","focus"],
+   "confirmsCommands":true,"inFocus":true,"networkType":"wifi","networkMetered":false,"networkValidated":true}]}}}
+```
+
+`access` is `available` or `not-allowed`; `devices` is empty unless it is `available`, and a device that left
+is simply absent. A value the device does not report is absent; percentages are 0 to 100 and texts at most
+64 characters. `readySequence` changes exactly when a device becomes ready again after it was gone.
+`capabilities` and `requestableCapabilities` are open lists: ignore a name you do not know. `revision`
+follows the same rule as the `deck` push: apply a push only when its revision is higher than the last one
+applied in this session. A host without this api never pushes it and answers every `companion-devices`
+invoke with `CAPABILITY_UNSUPPORTED`.
+
+##### `music-players`
+
+```json
+{"type":"host.invoke","id":"<uuid-v7>","deadlineMs":30000,
+ "payload":{"api":"music-players","operation":"album-color","arguments":{"instanceId":"spotify::alice"}}}
+```
+
+The music players of every enabled provider, other plugins' and Macro Deck's own, and the average colour of
+each one's cover. Shapes are in
+[`MusicPlayersDtos.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/protocol/src/MacroDeck.Plugin.Protocol/Callbacks/MusicPlayersDtos.cs).
+The SDK side is [Reading every provider's players](https://docs.macro-deck.app/features/music-players/#reading-every-providers-players).
+
+| Operation | Arguments | Result `data` |
+| --- | --- | --- |
+| `album-color` | `instanceId`, the qualified `providerId::instanceId`, 1 to 512 characters | `color`: lowercase `#rrggbb`, absent when the host knows no colour for the player |
+
+- **No permission.** Any plugin may read any provider's players, as any plugin may already register any
+  player's artwork with `ui`/`register-music-player-artwork`.
+- **The colour** is the one the player's album colour variable shows: the average colour of the current
+  cover, or the last one derived for the player while it shows none. An unknown player answers no colour.
+- **`album-color` may fetch the cover** from its provider, possibly the calling plugin itself, so it runs off
+  the session's dispatch loop and shares the limit of 4 in-flight artwork lookups with
+  `register-music-player-artwork`; beyond that it is refused at once with a retryable `RATE_LIMITED`. A
+  provider that does not answer within 20 seconds gives a retryable `TIMEOUT`. Calls count toward the
+  per-plugin callback throttle.
+
+The `music-players` `host.state` push is the same for every plugin, sent on registration and whenever the
+list changes, as `MusicPlayersStateDto`:
+
+```json
+{"type":"host.state","id":"<uuid-v7>","payload":{"api":"music-players","data":{"revision":5,
+ "instances":[{"id":"spotify::alice","providerId":"app.macro-deck.spotify","providerName":"Spotify",
+   "displayName":"Spotify (alice)"}]}}}
+```
+
+`providerName` is a localized text: a plain string, or a `$localized` reference. `revision` follows the
+same rule as the `deck` push. A host without this api never pushes it and answers `album-color` with
+`CAPABILITY_UNSUPPORTED`; the .NET SDK then reports no players and no colour.
+
 #### Events, logs and state
 
 ```json
@@ -3501,7 +3862,7 @@ All three are plugin → host and **fire-and-forget** - no reply message.
 | `log.publish` | `events` | array of `LogEventDto` | yes | A batch of structured log events (≤ 64). |
 | | `dropped` | integer | no | Events the plugin's sink dropped since the previous batch. |
 | `state.update` | `kind` | string | yes | The kind whose snapshot is stale - re-describe it. Not data-carrying. |
-| | `localId` | string | no | The capability that changed. |
+| | `localId` | string | no | The capability that changed. For `email-inbox`, the inbox whose content or status changed - see [`email-inbox`](#email-inbox). |
 | | `reason` | string | no | Diagnostic reason. |
 
 Built from the schema:
@@ -3542,13 +3903,13 @@ Built from the schema:
 | `asset.chunk` | plugin → host | `assetId`, `index`, `data` (all required); `data` is base64 |
 | `asset.commit` | plugin → host | `assetId` (required) |
 | `asset.ack` | host → plugin | `assetId`, `accepted` (required), `index` - acknowledges any of the three |
-| `host.asset.begin` | host → plugin | same as `asset.begin`; the host's answer to a `devices`/`icon` call |
+| `host.asset.begin` | host → plugin | same as `asset.begin`; the host's answer to a `devices`/`icon`, `adb`/`screenshot` or `companion-devices`/`screenshot` call |
 | `host.asset.chunk` | host → plugin | same as `asset.chunk` |
 | `host.asset.commit` | host → plugin | same as `asset.commit` |
 | `host.asset.ack` | plugin → host | same as `asset.ack` |
 
 - `totalBytes` is checked against `maxAssetBytes` before a byte is buffered; each chunk's pre-encoding size is bounded by `maxAssetChunkBytes`.
-- The `kind` values are `icon`, `artwork`, `action-icon`, `ui-resource` and `icon-pack`. A `ui-resource` upload is also refused at `asset.begin` when it is empty, larger than `maxUiResourceBytes` (`ASSET_TOO_LARGE`), or not `image/png`, `image/jpeg`, `image/webp` or `image/gif` (`INVALID_PAYLOAD`). Its bytes are held in memory for the `ui`/`register-resource` call that follows and are never written to the host's on-disk asset cache. An `icon-pack` upload is held the same way, for the `icon-packs`/`sync-bundled` call that follows.
+- The `kind` values are `icon`, `artwork`, `action-icon`, `ui-resource`, `icon-pack`, `android-screenshot` and `companion-screenshot`. `android-screenshot` and `companion-screenshot` are host to plugin only: the host refuses them in `asset.begin`. A `ui-resource` upload is also refused at `asset.begin` when it is empty, larger than `maxUiResourceBytes` (`ASSET_TOO_LARGE`), or not `image/png`, `image/jpeg`, `image/webp` or `image/gif` (`INVALID_PAYLOAD`). Its bytes are held in memory for the `ui`/`register-resource` call that follows and are never written to the host's on-disk asset cache. An `icon-pack` upload is held the same way, for the `icon-packs`/`sync-bundled` call that follows.
 - One unacknowledged step in flight at a time, never a burst.
 - `index` must equal the next expected index: no reordering, gaps or duplicates.
 - `asset.commit` verifies the final byte count and a recomputed content hash against `asset.begin`.
@@ -3600,9 +3961,9 @@ A reply sets `correlationId` to the `id` it answers. Five types **require** one:
 
 ### Error handling
 
-A protocol-level failure sets `error` instead of `payload`. Default messages are in [the protocol page](https://docs.macro-deck.app/reference/protocol/#errors). The twenty-nine codes, append-only within a protocol major (removing or renaming one requires a version advance):
+A protocol-level failure sets `error` instead of `payload`. Default messages are in [the protocol page](https://docs.macro-deck.app/reference/protocol/#errors). The thirty codes, append-only within a protocol major (removing or renaming one requires a version advance):
 
-`PROTOCOL_VERSION_UNSUPPORTED`, `UNKNOWN_MESSAGE_TYPE`, `MALFORMED_ENVELOPE`, `INVALID_PAYLOAD`, `UNAUTHENTICATED`, `PLUGIN_ALREADY_REGISTERED`, `SESSION_EXPIRED`, `SESSION_NOT_RESUMABLE`, `SESSION_REPLACED`, `SESSION_NOT_FOUND`, `CAPABILITY_UNSUPPORTED`, `CAPABILITY_UNAVAILABLE`, `PAYLOAD_TOO_LARGE`, `ASSET_TOO_LARGE`, `QUEUE_OVERFLOW`, `RATE_LIMITED`, `TIMEOUT`, `CANCELLED`, `CORRELATION_UNKNOWN`, `DUPLICATE_IDEMPOTENCY_KEY`, `INTERNAL_ERROR`, `ADB_NOT_ENABLED`, `ADB_NOT_ALLOWED`, `ADB_FAILED`, `UI_RESOURCE_QUOTA_EXCEEDED`, `PLUGIN_ICON_NOT_FOUND`, `ICON_PACK_INVALID`, `ICON_PACK_SYNC_NOT_ALLOWED`, `ICON_NOT_FOUND`.
+`PROTOCOL_VERSION_UNSUPPORTED`, `UNKNOWN_MESSAGE_TYPE`, `MALFORMED_ENVELOPE`, `INVALID_PAYLOAD`, `UNAUTHENTICATED`, `PLUGIN_ALREADY_REGISTERED`, `SESSION_EXPIRED`, `SESSION_NOT_RESUMABLE`, `SESSION_REPLACED`, `SESSION_NOT_FOUND`, `CAPABILITY_UNSUPPORTED`, `CAPABILITY_UNAVAILABLE`, `PAYLOAD_TOO_LARGE`, `ASSET_TOO_LARGE`, `QUEUE_OVERFLOW`, `RATE_LIMITED`, `TIMEOUT`, `CANCELLED`, `CORRELATION_UNKNOWN`, `DUPLICATE_IDEMPOTENCY_KEY`, `INTERNAL_ERROR`, `ADB_NOT_ENABLED`, `ADB_NOT_ALLOWED`, `ADB_FAILED`, `UI_RESOURCE_QUOTA_EXCEEDED`, `PLUGIN_ICON_NOT_FOUND`, `ICON_PACK_INVALID`, `ICON_PACK_SYNC_NOT_ALLOWED`, `ICON_NOT_FOUND`, `COMPANION_DEVICES_NOT_ALLOWED`.
 
 #### Close codes
 
@@ -3655,7 +4016,7 @@ Advertised at runtime in the protocol descriptor and again in the session respon
 | `maxUiNodesPerTree` | 2000 |
 | `maxUiUpdatesPerSecond` / `maxUiUpdateBurst` | 30 / 90 |
 | `maxUiResourceBytes` | 2 MiB |
-| `maxUiResourceBytesPerPlugin` / `maxUiResourcesPerPlugin` | 16 MiB / 256 |
+| `maxUiResourceBytesPerPlugin` / `maxUiResourcesPerPlugin` | 48 MiB / 1024 |
 | `maxUiAttachmentsPerSession` | 16 |
 | `maxUiSessionsPerProvider` | 8 |
 

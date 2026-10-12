@@ -30,7 +30,7 @@ under [behaviour changes that moved no version](https://docs.macro-deck.app/ui/r
 | UI model | `MacroDeck.Ui`, `MacroDeck.Ui.Model`, `MacroDeck.Ui.Testing` | Frozen like the SDK; the UI model's wire major is negotiated separately - see [the UI model majors](#ui-model-majors). |
 | Protocol | `MacroDeck.Plugin.Protocol`: the envelope, DTOs, message types, error codes | Append-only within a protocol major; a break needs a new major. |
 | Plugin HTTP and WebSocket | `/api/plugins/*`, `/plugins/ws` | Existing endpoints keep their shape and meaning - see [the protocol reference](https://docs.macro-deck.app/reference/protocol/). |
-| Capability and host API catalogues | `device-provider`/`devices`, `layout-provider`/`layouts`, `folder-view-provider`/`folder-views`, `widget-type-provider`/`widget-types`, `screensaver-provider`/`screensavers`, `messaging`/`messaging`, `video-stream-provider`/`video-streams`, `calendar`, `event-bindings` | Names stay; see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). |
+| Capability and host API catalogues | `device-provider`/`devices`, `layout-provider`/`layouts`, `folder-view-provider`/`folder-views`, `widget-type-provider`/`widget-types`, `screensaver-provider`/`screensavers`, `messaging`/`messaging`, `video-stream-provider`/`video-streams`, `calendar`, `config-entries`, `battery-provider`/`batteries`, `email-inbox`, `locale`, `companion-devices`, `music-players`, `event-bindings`, `http` | Names stay; see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). |
 | Manifest and package format | `manifest.json`, the `.macroDeckPlugin` package | An existing manifest and package keep installing - see [the manifest reference](https://docs.macro-deck.app/reference/manifest/). |
 | Analyzer diagnostic ids | `MDP1001`, …, the `MDLOC` family `MDLOC001`-`MDLOC008` | An id keeps its meaning and is never reused - see [analyzers](https://docs.macro-deck.app/reference/analyzers/). |
 | Conformance check ids | `MDC0305`, … | Stable, so you can gate CI on them - see [conformance](https://docs.macro-deck.app/reference/conformance/). |
@@ -223,8 +223,126 @@ What did **not** need a major:
   non-fatally and the plugin's other capabilities keep working, and a plugin that does not implement
   `ICalendarProvider` never declares it. The host's calendar widget types and the `calendar` trigger
   provider are host-owned additions, not protocol changes.
+- [Configuration entries](https://docs.macro-deck.app/features/setup-flows/#taking-part-in-storing-an-entry) added the
+  `IConfigEntryLifecycle` interface, every member with a default, and the capability kind `config-entries`
+  at capability version `1`, within major `3`. An older host rejects the kind non-fatally and stores entries
+  as before, and a plugin that does not implement the interface never declares it.
+- `IConfigEntryLifecycle` gained a `SynchronizeEntriesAsync` overload that takes the integration's own
+  `IVariableApi` and whose default calls the existing overload, so an implementation written before it is
+  synchronized exactly as before; its `CancellationToken` has no default, so a call such as
+  `SynchronizeEntriesAsync(entries, default)` still binds to the existing overload. `ConfigEntryPreparation`
+  gained `RejectedVariableNames` (empty by default) and `ConfigEntryPreparationResult` gained
+  `RetryOnConflict` (`false` by default), carried as the optional `rejectedVariableNames` and
+  `retryOnConflict` on `config-entries`/`prepare`. An older host never retries; an older plugin never asks
+  to, and is refused on the first conflict as before.
+- `ConfigFlowResult` gained `CompleteWithoutEntry()` and `StoresEntry` (`true` for every other result),
+  carried as the optional `withoutEntry` on a `flow.submit` `Complete` result. An older host does not know
+  the flag and stores an entry from the collected values under the integration's name, as for
+  `Complete` without a title.
+- [Email inboxes](https://docs.macro-deck.app/features/email-inboxes/) added the `IEmailInboxProvider` interface, a capability kind,
+  `email-inbox`, at capability version `1`, with its own operations, DTOs and reply limits, all within major
+  `3`. `state.update` gained a meaning for this kind only: a `localId` names an inbox whose content or status
+  changed, and the host reads that inbox again without re-describing the kind; every other kind reads
+  `localId` as before. An older host rejects the kind non-fatally and the plugin's other capabilities keep
+  working, and a plugin that does not implement `IEmailInboxProvider` never declares it. The host's email
+  widget, variables and `email` trigger provider are host-owned additions, not protocol changes.
+- [Event origins](https://docs.macro-deck.app/ui/views/sessions/#answering-the-client-that-acted) added `IUiEventOrigin` and an
+  `IUiSession.Dispatch(UiEvent, IUiEventOrigin)` overload whose default forwards to `Dispatch(UiEvent)`, so a
+  session compiled before it keeps receiving every event. The `ui` host API gained `origin.report-failure`
+  and `origin.show-modal`; against an older host they answer `false` or a cancellation.
+- `IVariableApi` gained `RequestRefreshAsync` and `NotifyDeclarationsChangedAsync`, both defaulting to a
+  no-op, and the `variables` host API gained `refresh`; an older host makes the request a no-op.
+  `NotifyDeclarationsChangedAsync` uses the existing `state.update`.
+- `IVariableApi` gained `RequestDefinitionRefreshAsync`, defaulting to `RequestRefreshAsync`, and
+  `variables`/`refresh` gained an optional `definitionIds` list; an older host ignores it and reads every
+  declared variable, which is always allowed. `IVariableApi` also gained `BindAsync`, whose default throws
+  `NotSupportedException`, and the `variables` host API gained `bind`; against an older host the SDK
+  reports the bindings as not supported. Two limits were added: `maxVariableRefreshDefinitionIds` and
+  `maxVariableBindingsPerCall`.
+- `VariableNames` (`MacroDeck.Sdk.Variables`), `HostOptionsSources` (`MacroDeck.Sdk.Actions`) and the
+  `NativeKeys` members `IsPositional`, `TryGetWindowsScanCode`, `TryGetMacOSKeyCode` and
+  `TryFromWindowsScanCode` are new SDK helpers. They need no host support: the option source ids are the
+  values every Macro Deck already answers, and the name rules are the ones every Macro Deck already applies.
+- `IIntegrationContext` gained `Storage`, `Locale` and `Http`, and `IConfigFlowContext` gained `Http`, each a
+  default interface member: `UnavailableIntegrationStorage.Instance` (every key missing, a write throws
+  `InvalidOperationException`), `LocalLocaleApi.Instance` (the current culture with a 24-hour clock) and
+  `DefaultHostHttp.Instance` (`MacroDeck/` and the SDK version), so an existing implementation keeps
+  compiling and behaves as before. The `locale` host API (`time-of-day-format`) and the push-only `http`
+  `host.state` are new: an older host answers `CAPABILITY_UNSUPPORTED` or pushes nothing, and the SDK falls
+  back to those same defaults; an older SDK ignores the `http` push. Storage needs no host support: a plugin
+  keeps it in its own data directory. `HourCycles` and `TimeOfDayFormat` (`MacroDeck.Sdk.Locale`) and
+  `IntegrationStorageKeys` (`MacroDeck.Sdk.Storage`) are new SDK types.
+- `maxUiResourceBytesPerPlugin` and `maxUiResourcesPerPlugin` rose from 16 MiB and 256 to 48 MiB and 1024.
+  The host advertises them in the protocol descriptor; a plugin built against an older SDK keeps its
+  own, lower quota, which a newer host still accepts.
+- `MacroDeck.Ui` added `UiWidgetSafeArea` and `UiWidgetSurface` in `MacroDeck.Ui.Widgets`.
+- `IWidgetApi` gained `GetWidgetDataAsync`, defaulting to `null`, and the `widgets` host API gained
+  `get-data`; an older host answers no data. `IVariableApi` gained `OpenHistoryAsync`, whose default throws a
+  `VariableHistoryException` with `Unsupported`, and the `variables` host API gained `history.open`,
+  `history.read` and `history.close`; against an older host the SDK reports the history as unsupported.
+- `UiWidgetSurfaceAttributes` gained `culture`, with the reader `UiWidgetSurface.Culture`. A provider that
+  ignores it, or reads a surface from an older host without it, draws its own text in its default language.
+- While the host is locked, a client's events to a plugin's `widget` or `dialog` session are refused with
+  `HOST_LOCKED`, except `reveal`. A plugin never received a guarantee that such events arrive while
+  locked, and the hardware path already refused them.
+- A Weather widget's default press now runs the details action its station's provider declares through
+  `IWeatherProvider.DetailsAction`, instead of always running the built-in Weather integration's **Weather
+  details** action. A weather plugin built against an older SDK declares none, so its stations get no default
+  press; a flow the user added still runs. See
+  [Pressing the widget](https://docs.macro-deck.app/features/weather/#pressing-the-widget).
+- Weather providers gained `IIntegrationContext.WeatherProvider` (`IWeatherProviderApi`,
+  `NotifySnapshotsChangedAsync`) and the `weather` host api with `snapshots-changed`, all within major `3`.
+  The member is a default interface member returning `UnsupportedWeatherProviderApi.Instance`, so an
+  existing implementation keeps compiling. An older host answers `CAPABILITY_UNSUPPORTED`, which the SDK
+  turns into a no-op; the host then reads the stations on its own interval as before. See
+  [Telling Macro Deck the weather changed](https://docs.macro-deck.app/features/weather/#telling-macro-deck-the-weather-changed).
+- [Android devices](https://docs.macro-deck.app/features/android-devices/) added typed operations to `IAndroidDevice` (`SendKeyAsync`,
+  `TapAsync`, `SwipeAsync`, `InputTextAsync`, `StartAppAsync`, `ForceStopAppAsync`, `OpenUriAsync`,
+  `RebootAsync`, `CaptureScreenshotAsync`, `GetStatusAsync`), `IAndroidDevice.LacksUsbPermission`,
+  `IAndroidDevice.Mode`, `IAndroidDeviceManager.DefaultDevice`, `IAndroidDeviceManager.IsAdbUnavailable`, the
+  `AndroidKey`, `AndroidRebootMode`, `AndroidDeviceMode` and `AndroidDeviceStatus` types, ten `adb` host api
+  operations, the asset kind `android-screenshot`, and the optional `defaultDeviceSerial`, `adbUnavailable`,
+  `lacksUsbPermission` and `mode` fields of the `adb` state, all within major `3`. The members are default interface
+  members, so an `IAndroidDevice` or `IAndroidDeviceManager` written against an older SDK keeps compiling and
+  loading: its typed operations throw `AndroidDeviceException` with `Unsupported`, `GetStatusAsync` answers
+  `null`, `LacksUsbPermission` and `IsAdbUnavailable` are `false`, `Mode` is `Normal` and `DefaultDevice` is
+  `null`. An older host answers the new
+  operations with `CAPABILITY_UNSUPPORTED`, which the SDK reports the same way, and an older plugin ignores
+  the new state fields: a device lacking USB permission still reads `unauthorized`, one in recovery `offline`. `AndroidDeviceState` gains
+  no value. The typed operations run while the host is locked, see
+  [ADR 0092](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0092-plugins-reach-adb-through-a-permission-gated-host-api.md).
+- [Companion devices](https://docs.macro-deck.app/features/companion-devices/) added `IIntegrationContext.CompanionDevices`, the
+  `MacroDeck.Sdk.Companion` types (`ICompanionDeviceApi`, `UnsupportedCompanionDeviceApi` and the device,
+  state, command, result and failure types), the `companion-devices` host API (`wait`, `send`, `request`,
+  `screenshot`) with a per-plugin `host.state` push, the error code `COMPANION_DEVICES_NOT_ALLOWED`, the asset
+  kind `companion-screenshot` and the permission `host:companion-devices`, all within major `3`.
+  `CompanionDevices` is a default interface member returning `UnsupportedCompanionDeviceApi.Instance`, so an
+  existing `IIntegrationContext` implementation keeps compiling and loading. An older host pushes nothing and
+  answers `CAPABILITY_UNSUPPORTED`; the SDK then reports access `Unsupported`, answers a send with `false` and
+  fails a request or screenshot with `NotConnected`, without throwing. An older plugin ignores the push, and
+  an older host installs a manifest that declares `host:companion-devices` with the `unknown-permission`
+  warning. The permission is enforced from the start, which breaks no plugin because none used the API
+  before; see
+  [ADR 0110](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0110-plugins-reach-companion-devices-through-a-permission-gated-host-api.md).
+  Capability names, failures and network types are open strings: a reader ignores a capability it does not
+  know and reads an unknown failure as `failed`.
+- [Reading every provider's players](https://docs.macro-deck.app/features/music-players/#reading-every-providers-players) added
+  `IIntegrationContext.MusicPlayers`, the `MacroDeck.Sdk.MusicPlayer` types `IMusicPlayerApi`,
+  `MusicPlayerInstanceSnapshot` and `UnsupportedMusicPlayerApi`, and the `music-players` host API
+  (`album-color`) with a `host.state` push sent to every plugin, all within major `3`. `MusicPlayers` is a
+  default interface member returning `UnsupportedMusicPlayerApi.Instance`, so an existing `IIntegrationContext`
+  implementation keeps compiling and loading and reports no players. An older host pushes nothing and answers
+  `CAPABILITY_UNSUPPORTED`, which the SDK reports as no players and a `null` colour, without throwing; an
+  older plugin ignores the push. Reading is not gated, like registering another player's artwork.
 - Colour variables added `VariableType.Color`, whose values travel as an ordinary `text` value, and an
   optional `allowAlpha` field on `ActionParameterDto` (`ActionParameter.AllowAlpha`), all within major `3`.
+- [Batteries](https://docs.macro-deck.app/features/batteries/) added a capability kind, `battery-provider`, at capability version
+  `1`, a host API, `batteries`, with a `host.state` push sent to every plugin, and the
+  `MacroDeck.Sdk.Batteries` types, all within major `3`. `IIntegrationContext.Batteries` is a default
+  interface member returning `UnsupportedBatteryApi.Instance`, so an existing implementation keeps
+  compiling. An older host answers a publish with `CAPABILITY_UNSUPPORTED`, which the SDK turns into a
+  no-op, and an older plugin ignores the `batteries` state. Kinds, charge states and health values are open
+  strings: a reader maps one it does not know to `other` or unknown.
   An older host drops a variable definition that declares `Color` and ignores `allowAlpha`. A colour
   parameter without `allowAlpha` still receives opaque `#rrggbb`, also when the user bound it to a
   variable. A new optional `hostApiFeatures` list on the session request lets a plugin declare
@@ -241,6 +359,10 @@ What did **not** need a major:
   loading. An older host answers `CAPABILITY_UNSUPPORTED`, and the SDK falls back to resolving fixed colours
   locally, giving `null` for a reference and delivering a watch once. See
   [Resolving colours yourself](https://docs.macro-deck.app/features/variables/#resolving-colours-yourself).
+- Searchable selects added `ActionParameter.Searchable` with `ActionParameter.AsSearchable()`, and an
+  optional `searchable` field on `ActionParameterDto`, all within major `3`. An older host ignores it and
+  draws the plain select; a parameter from an older plugin has no `searchable` and is not searchable. See
+  [Letting the user search a long list](https://docs.macro-deck.app/features/actions/#letting-the-user-search-a-long-list).
 - Localization moved the **UI model** major, not this one - see [the localization major](#the-localization-major).
 
 **Negotiation happens exactly once**, in `POST /api/plugins/sessions`:
@@ -718,7 +840,7 @@ or shipped but not implemented, is stated as such.
 | --- | --- | --- |
 | Host | Everything: it owns state, credentials, secrets and install decisions | - |
 | Desktop app, over the private loopback port | **Admin**, with a per-launch secret instead of a token | A process running as the same user can read that secret - see [loopback trust](#loopback-trust-needs-a-per-launch-secret) |
-| Plugin process | Scope `plugin`: the plugin protocol surface, and nothing else | Not sandboxed: it runs with the user's full privileges. Declared permissions are [not enforced](#permissions-declared-not-enforced), except `host:adb` |
+| Plugin process | Scope `plugin`: the plugin protocol surface, and nothing else | Not sandboxed: it runs with the user's full privileges. Declared permissions are [not enforced](#permissions-declared-not-enforced), except `host:adb` and `host:companion-devices` |
 | Deck clients (web client, companion) | Scope `client`: the viewer-safe endpoints | Plugin endpoints refuse them |
 | LAN callers and browsers | The public listener's API and web client | Every plugin endpoint refuses them |
 | Creator Portal and Store | Signing Store plugins after checking the publishing workflow's provenance; publishing the signed registry and its revoked keys | Revocation refuses new installs and updates, not a plugin that is already installed |
@@ -1027,7 +1149,7 @@ digest, and every declared file's hash and size. See [`sign`](https://docs.macro
 
 <a id="permissions-declared-not-enforced"></a>
 
-### Permissions: declared, and enforced only for ADB
+### Permissions: declared, and enforced only for ADB and Companion devices
 
 ```json
 { "permissions": ["host:variables", "host:adb"] }
@@ -1037,12 +1159,12 @@ A manifest may declare permissions from a fixed vocabulary (`host:variables` thr
 mirroring the host callback surface one for one. They are parsed, shape-validated, persisted and surfaced
 through the installed-plugins API so a consent surface has something real to render.
 
-**The host gates exactly one host API on a declared permission: `adb`, on `host:adb`.** Every other host
-callback is served whether or not the calling plugin declared the permission that covers it. Plugins that
+**The host gates exactly two host APIs on a declared permission: `adb`, on `host:adb`, and
+`companion-devices`, on `host:companion-devices`.** Every other host callback is served whether or not the calling plugin declared the permission that covers it. Plugins that
 predate the vocabulary declare nothing, so a default-deny posture for the rest would break every plugin
 already running, and a default-allow posture would not be a boundary worth the name.
 
-`host:adb` is enforced because it is new: no existing plugin relied on it. A plugin reaches Macro Deck's
+Both are enforced because they were new: no existing plugin relied on them. A plugin reaches Macro Deck's
 ADB connection only when ADB is enabled, the user has left **Allow plugins to use ADB** on, and the active
 version of the installed plugin declares `host:adb`. Installing a plugin that declares it while ADB or
 that setting is off asks the user whether to turn both on. A self-registered session, admitted through a
@@ -1055,6 +1177,31 @@ without declaring anything. `host:adb` gives the user a visible, switchable deci
 Macro Deck's connection; it does not stop a hostile plugin from reaching a device. Local paths an `adb`
 call names are read and written with Macro Deck's identity, which is the same user the plugin already runs
 as.
+
+**A locked host runs only fixed ADB commands.** While Macro Deck is locked, the open-ended operations (shell,
+push, pull, install, uninstall, connect) are refused for plugins and built-in integrations alike. The typed
+operations (keys, taps, swipes, text, starting and stopping an app, opening a URI, reboot, screenshot, screen
+status) still run, so a deck button bound to one keeps working; each is a fixed command whose arguments the
+host validates and quotes. A plugin allowed to use ADB can therefore, for example, type text or capture the
+screen of an attached device while the computer is locked.
+
+<a id="companion-devices"></a>
+
+**Companion devices are off until the user allows them.** A plugin reaches the phones and tablets
+connected through the Companion app only when the user has turned on **Allow plugins to use Companion
+devices** in **Settings > Companion App**, which is off by default, and the active version of the installed
+plugin declares `host:companion-devices`. Installing a plugin that declares it while that setting is off
+asks the user whether to turn it on; a plugin that declares it and is refused a call asks once per run of
+Macro Deck. A self-registered session counts as declaring it, as for `host:adb`; the setting still applies.
+An allowed plugin reads everything the devices report, including battery, model, network type and the
+Wi-Fi network's name, sends them commands (brightness, orientation, vibration, screen on and off, bringing
+Macro Deck to the front) and captures screenshots. A deck screenshot shows whatever the deck shows,
+including other plugins' widgets, and needs no approval on the device; a full screen screenshot still needs
+the device's user to approve it on the device, whatever the setting says. The setting covers every plugin
+that declares the permission, and Macro Deck's own integrations are not subject to it. This too is user
+control rather than isolation: the plugin process itself stays unsandboxed. See
+[Companion devices](https://docs.macro-deck.app/features/companion-devices/) and
+[ADR 0110](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0110-plugins-reach-companion-devices-through-a-permission-gated-host-api.md).
 
 Treat the other declared permissions as documentation of intent, not as a constraint on what a plugin can
 reach.
@@ -1109,6 +1256,26 @@ any plugin's view can make the clients that draw it open sessions on another plu
 wider than what a signed-in client can already open, but it means a stream's audience is everyone who can
 see any Macro Deck view, not only the views its own plugin draws.
 
+### Battery devices
+
+Every plugin can read every [battery device](https://docs.macro-deck.app/features/batteries/) in Macro Deck: the ones other plugins
+publish, Macro Deck's own, and the Android phones and tablets its ADB integration reports. The host pushes
+the whole catalog, each device's name, kind, level, charge state and connection, to every connected plugin.
+No permission covers publishing or reading, and the ADB devices are not filtered by **Allow plugins to use
+ADB** or `host:adb`: a battery level is not access to the device, and gating it would leave other plugins'
+widgets blank. This is a deliberate decision, recorded in
+[ADR 0109](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0109-battery-devices-are-a-host-brokered-catalog-every-plugin-may-read.md).
+
+- **Ids carry no hardware identifiers.** The ADB integration publishes a phone under an HMAC of its
+  serial, keyed with a secret of this install, so the serial never leaves Macro Deck's ADB service, is
+  never stored, and cannot be matched against a list of serials or across installs. A provider must not put a
+  serial or anything else it would not show every plugin into a device's name or id.
+- **A provider speaks only for itself.** Devices are stored under the authenticated plugin or the
+  integration that published them; a plugin cannot publish, change or remove another provider's devices.
+- **Bounded.** A provider holds at most 64 devices, and a publish that fails validation changes nothing.
+- **Little is kept.** Devices live in memory only. What persists is a Battery widget's configuration (the
+  device's qualified id and last name) and the battery variables.
+
 ### Logging and redaction
 
 ```csharp
@@ -1130,7 +1297,7 @@ Read this before deciding what a plugin should be trusted with.
 | Limitation | Detail |
 | --- | --- |
 | A plugin runs with the user's full privileges | A managed plugin is an ordinary child process: no sandbox, container, separate account or privilege reduction. It can do anything the user can - read and write their files, open network connections, start processes. Installing one is equivalent to running any other downloaded program |
-| Permissions are not a boundary | A plugin that declares nothing can still reach every host API except `adb`, and even `host:adb` gates only Macro Deck's own ADB connection, not a plugin's own - see [above](#permissions-declared-not-enforced) |
+| Permissions are not a boundary | A plugin that declares nothing can still reach every host API except `adb` and `companion-devices`, and even these gate only Macro Deck's own connections, not a plugin's own - see [above](#permissions-declared-not-enforced) |
 | An unsigned plugin is still admitted on your say-so | See [signing](#signing-the-creator-portal-signs-and-the-host-verifies-before-install-and-before-every-load). For an unsigned install the declared-digest check is corruption detection, not a boundary: whoever can rewrite the binary can rewrite the unsigned manifest. Trust rests on where you got the file |
 | Revocation stops new installs only | A plugin installed before its certificate or issuer was revoked keeps running; the Store marks it, and removing it is your decision |
 | A process running as the same user can become admin | It can read the desktop app's loopback secret. The model defends against LAN callers, browsers and other local accounts, not a hostile process running as the same user |

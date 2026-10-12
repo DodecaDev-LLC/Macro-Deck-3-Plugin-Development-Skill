@@ -7,13 +7,17 @@ Contents:
 - Features: https://docs.macro-deck.app/features/
 - Actions: https://docs.macro-deck.app/features/actions/
 - Android devices: https://docs.macro-deck.app/features/android-devices/
+- Batteries: https://docs.macro-deck.app/features/batteries/
 - Button icons: https://docs.macro-deck.app/features/button-icons/
 - Button states: https://docs.macro-deck.app/features/button-states/
 - Calendars: https://docs.macro-deck.app/features/calendars/
+- Companion devices: https://docs.macro-deck.app/features/companion-devices/
 - Deck and clients: https://docs.macro-deck.app/features/deck/
 - Device providers: https://docs.macro-deck.app/features/devices/
+- Email inboxes: https://docs.macro-deck.app/features/email-inboxes/
 - Events: https://docs.macro-deck.app/features/events/
 - Integration issues: https://docs.macro-deck.app/features/integration-issues/
+- Integration storage: https://docs.macro-deck.app/features/integration-storage/
 - Layout providers: https://docs.macro-deck.app/features/layouts/
 - Localization: https://docs.macro-deck.app/features/localization/
 - Logging and health: https://docs.macro-deck.app/features/logging/
@@ -61,9 +65,10 @@ public sealed class ObsIntegration : IPluginIntegration, IVariableProvider, IEve
 | [Events](https://docs.macro-deck.app/features/events/) | `IEventProvider`, `IEventPublisher` | Let users trigger automation when something happens. |
 | [Messaging between plugins](https://docs.macro-deck.app/features/messaging/) | `IIntegrationContext.Messages` | Talk to other plugins and integrations by topic: events, commands and requests. |
 | [Deck and clients](https://docs.macro-deck.app/features/deck/) | `IIntegrationContext.Deck` | Navigate folders and profiles, and find out which folder each client has open. |
-| [Music players](https://docs.macro-deck.app/features/music-players/) | `IMusicPlayerProvider` | Drive the Music Player widget and reuse Macro Deck's ready-made music actions. |
+| [Music players](https://docs.macro-deck.app/features/music-players/) | `IMusicPlayerProvider`, `IIntegrationContext.MusicPlayers` | Drive the Music Player widget and reuse Macro Deck's ready-made music actions, and read every provider's players and album colours. |
 | [Weather](https://docs.macro-deck.app/features/weather/) | `IWeatherProvider` | Supply weather stations to Macro Deck's weather features. |
 | [Calendars](https://docs.macro-deck.app/features/calendars/) | `ICalendarProvider` | Supply calendar accounts and events to Macro Deck's calendar widgets, triggers and Join Meeting action. |
+| [Email inboxes](https://docs.macro-deck.app/features/email-inboxes/) | `IEmailInboxProvider` | Supply email inboxes to Macro Deck's email widget, variables and triggers. |
 | [Virtual profiles](https://docs.macro-deck.app/features/virtual-profiles/) | `IProfileProvider` | Offer profiles the plugin generates. |
 
 ### Setup and maintenance
@@ -74,6 +79,7 @@ public sealed class ObsIntegration : IPluginIntegration, IVariableProvider, IEve
 | [Integration issues](https://docs.macro-deck.app/features/integration-issues/) | `IIntegrationIssueProvider` | Tell the user what is wrong and how to fix it. |
 | [Notifications](https://docs.macro-deck.app/features/notifications/) | `INotificationService` | Show a toast or a dialog on every client and get the user's answer. |
 | [Settings migrations](https://docs.macro-deck.app/features/settings-migrations/) | `IMigrationProvider` | Take over a user's setup from Macro Deck 2. |
+| [Integration storage](https://docs.macro-deck.app/features/integration-storage/) | `IIntegrationContext.Storage` | Keep small documents of your own, such as devices you have seen, across restarts. |
 | [Localization](https://docs.macro-deck.app/features/localization/) | `MacroDeck.Localization` | Ship every user-facing string in every language. |
 | [Logging](https://docs.macro-deck.app/features/logging/) | `ILogger` | Write diagnostics the user can send you. |
 | [Testing](https://docs.macro-deck.app/features/testing/) | `MacroDeck.Plugin.Testing` | Test your integration without a running Macro Deck. |
@@ -85,6 +91,8 @@ public sealed class ObsIntegration : IPluginIntegration, IVariableProvider, IEve
 | [Devices](https://docs.macro-deck.app/features/devices/) | `IDeviceProvider` | Connect hardware or custom clients as Macro Deck devices. |
 | [Layouts](https://docs.macro-deck.app/features/layouts/) | `ILayoutProvider` | Describe a device's regions and geometry. |
 | [Android devices](https://docs.macro-deck.app/features/android-devices/) | `IAndroidDeviceManager` | Run shell commands, copy files and install apps on Android devices through Macro Deck's ADB connection. |
+| [Batteries](https://docs.macro-deck.app/features/batteries/) | `IBatteryProvider`, `IIntegrationContext.Batteries` | Report the battery levels of phones, headphones, controllers and other devices, and read every provider's devices. |
+| [Companion devices](https://docs.macro-deck.app/features/companion-devices/) | `ICompanionDeviceApi` | Read what the phones and tablets connected through the Companion app report, send them commands and take screenshots. |
 | [Macro Deck UI](https://docs.macro-deck.app/ui/) | `IUiProvider` | Draw configuration views, widgets and folder views. |
 | [Widget types](https://docs.macro-deck.app/ui/views/widget-types/) | `IWidgetTypeProvider` | Add deck widgets beside Macro Deck's own. |
 | [Folder views](https://docs.macro-deck.app/ui/views/folder-views/) | `IFolderViewProvider` | Replace a folder's button grid with your own rendering. |
@@ -94,9 +102,10 @@ public sealed class ObsIntegration : IPluginIntegration, IVariableProvider, IEve
 ### Host APIs
 
 `IIntegrationContext` gives an integration access to what Macro Deck owns: [`Deck`](https://docs.macro-deck.app/features/deck/) navigation and client positions, `Scripts`,
-`Widgets`, [`NotificationService`](https://docs.macro-deck.app/features/notifications/), `Notifications`, variables, configuration, events, [messaging](https://docs.macro-deck.app/features/messaging/) and [images for your own UI](https://docs.macro-deck.app/ui/reference/resources/#registering-your-own-images). In a plugin every call crosses the
-plugin protocol, so don't call them in a hot loop. [Android devices](https://docs.macro-deck.app/features/android-devices/) are the
-exception to where you find them: take `IAndroidDeviceManager` from dependency injection.
+`Widgets`, [`NotificationService`](https://docs.macro-deck.app/features/notifications/), `Notifications`, variables, configuration, events, [messaging](https://docs.macro-deck.app/features/messaging/), [battery devices](https://docs.macro-deck.app/features/batteries/#reading-devices), [music players](https://docs.macro-deck.app/features/music-players/#reading-every-providers-players), [images for your own UI](https://docs.macro-deck.app/ui/reference/resources/#registering-your-own-images), [storage](https://docs.macro-deck.app/features/integration-storage/), the user's [time format](https://docs.macro-deck.app/features/localization/#formatting-a-time-of-day) and the [User-Agent](https://docs.macro-deck.app/reference/plugin-hosting/#outgoing-http-requests) for outgoing requests. In a plugin every call crosses the
+plugin protocol, so don't call them in a hot loop. [Android devices](https://docs.macro-deck.app/features/android-devices/) and
+[Companion devices](https://docs.macro-deck.app/features/companion-devices/) can also be taken from dependency injection, as
+`IAndroidDeviceManager` and `ICompanionDeviceApi`.
 
 ### Ids
 
@@ -274,6 +283,20 @@ and **is still sent to the executor** - never infer anything from a field being 
 Set `Platforms` on the definition only when the capability does not exist on other platforms at all
 (hibernation on macOS); the action is then neither listed nor executable there.
 
+#### Letting the user search a long list
+
+A `Choice` or `DynamicChoice` parameter draws a plain select. For a long list, call `AsSearchable()` on it
+and the user can type into the field to filter the options by label:
+
+```csharp
+ActionParameter.DynamicChoice("counter", label: Strings.Parameters.Counter(), required: true).AsSearchable()
+```
+
+Typed text alone is never stored: the value is still one of the options, and the field shows the picked
+option's label. Other parameter
+types ignore it, and so does a Macro Deck release from before `Searchable`, which draws the plain select.
+For a configuration view, see [Letting the user search a long list](https://docs.macro-deck.app/ui/views/configuration/#letting-the-user-search-a-long-list).
+
 ### What the executor gets
 
 | `ActionExecutionContext` | |
@@ -342,6 +365,30 @@ rest of the (possibly unfinished) draft and `Filter` the typed text.
   editor reuse the answer.
 - **Give an optional dynamic choice a `placeholder`** ("First available"): options are only fetched when
   the list opens, so until then an empty field would read as "still to choose".
+
+### Options Macro Deck answers
+
+Some lists are Macro Deck's own. Name one of the ids in `HostOptionsSources` (`MacroDeck.Sdk.Actions`) as the
+parameter's `optionsSourceId`, and Macro Deck fills the list itself; `GetDynamicOptionsAsync` is not asked for
+that parameter:
+
+```csharp
+ActionParameter.Autocomplete("variable",
+	label: Strings.Parameters.SaveTo(),
+	optionsSourceId: HostOptionsSources.UserVariables,
+	required: true)
+```
+
+| Id | Lists | Option value |
+| --- | --- | --- |
+| `HostOptionsSources.Variables` | every variable, a typed name allowed | the canonical name |
+| `HostOptionsSources.UserVariables` | the user's own variables, a typed name allowed | the canonical name |
+| `HostOptionsSources.Devices` | the devices paired with Macro Deck | the device id |
+| `HostOptionsSources.AndroidDevices` | the connected Android devices, after an empty "default device" option | the serial |
+
+The ids are the strings Macro Deck has always answered, so a parameter declared with them works on every
+Macro Deck version; a version that does not know an id offers no options for it. Widget pickers use
+`WidgetOptionsSources` the same way.
 
 ### Configuring with a UI tree
 
@@ -434,8 +481,9 @@ integration uses the pattern above after starting a stream.
 >
 > Work with Android devices through Macro Deck's own ADB connection with IAndroidDeviceManager - the host:adb permission, the user's control, operations, errors, limits and testing.
 
-A plugin can run shell commands on an Android device, read its battery, copy files and install or
-uninstall apps through Macro Deck's own ADB (Android Debug Bridge) connection. Macro Deck finds the
+A plugin can press keys, tap, type, start apps, take screenshots, run shell commands, read the battery, copy
+files and install or uninstall apps on an Android device through Macro Deck's own ADB (Android Debug Bridge)
+connection. Macro Deck finds the
 `adb` program, runs the ADB server and tracks the attached devices; your plugin ships no `adb` client of
 its own and never talks to the ADB server directly.
 
@@ -492,10 +540,8 @@ internal sealed class SleepPhoneAction(IAndroidDeviceManager android) : IActionD
 
 			try
 			{
-				var result = await device.ExecuteShellAsync("input keyevent KEYCODE_SLEEP", context.CancellationToken);
-				return result.ExitCode == 0
-					? ActionResult.Success()
-					: ActionResult.Failed(ActionErrorCodes.ProviderRejected, Strings.Errors.PhoneRefused());
+				await device.SendKeyAsync(AndroidKey.Sleep, context.CancellationToken);
+				return ActionResult.Success();
 			}
 			catch (AndroidDeviceException)
 			{
@@ -510,8 +556,9 @@ The user gets a **Sleep phone** action that turns off the screen of the phone wi
 
 Things to know:
 
-- **Resolve it from DI.** `IAndroidDeviceManager` is not on `IIntegrationContext`. Take it in a
-  constructor, like any other service; the SDK registers it for every plugin.
+- **Resolve it from DI, or read `context.AndroidDevices`.** Take it in a constructor, like any other
+  service; the SDK registers it for every plugin. `IIntegrationContext.AndroidDevices` returns the same
+  instance, for code that only has the context.
 - **Check `Access` before you rely on it.** Whether your plugin may use ADB is the user's decision and
   can change while your plugin runs - see [Who decides](#who-decides).
 - **Macro Deck owns the devices.** It discovers, connects and forgets them. A plugin never creates,
@@ -520,7 +567,8 @@ Things to know:
 ### Declaring `host:adb`
 
 An installed plugin reaches ADB only when its manifest lists `host:adb` in
-[`permissions`](https://docs.macro-deck.app/reference/manifest/#permissions). It is the one permission the host enforces; every
+[`permissions`](https://docs.macro-deck.app/reference/manifest/#permissions). It is one of the two permissions the host enforces,
+next to [`host:companion-devices`](https://docs.macro-deck.app/features/companion-devices/#declaring-hostcompanion-devices); every
 other entry in the vocabulary is still declared for disclosure only. If plugins are not allowed to use ADB
 when the user installs the first version of your plugin that declares it, Macro Deck asks the user whether
 to allow it. It does not ask again for an update of a version that already declared it.
@@ -581,6 +629,29 @@ android.DeviceStateChanged += (_, e) =>
   authorization prompt on the device), `Unauthorized`, or `Offline`. Operations need `Online`.
 - **`Info`** carries `Model`, `Manufacturer` and `Product` as the device reports them; any of them can be
   `null` until the device is online.
+- **`Info.StableId`** is the same for the same hardware over USB and Wi-Fi, and across a Wi-Fi port change,
+  while `Serial` differs per connection. It is a keyed hash of the device's hardware serial with a key
+  unique to this Macro Deck installation, so it cannot be matched against a serial, or between two
+  installations. It is `null` until Macro Deck has read it and on an older host, and it is the local id
+  under which the built-in ADB integration publishes the device's [battery](https://docs.macro-deck.app/features/batteries/), so a
+  plugin with `host:adb` can tell which battery entry belongs to which device.
+- **`LacksUsbPermission`** is `true` for an `Unauthorized` device the computer lacks the USB permissions
+  for, a missing Linux udev rule for example, rather than one that has not authorized this computer. Tell
+  the user which: the fix differs. A change of it raises `DeviceStateChanged` even though `State` stays
+  `Unauthorized`. It is always `false` on an older host.
+- **`Mode`** tells an `Offline` device in the `Bootloader`, `Recovery` or `Sideload` apart from one that is
+  simply not answering (`Normal`); `Unknown` is a state adb reported that Macro Deck does not recognise. It is
+  `Normal` for every other state. A change of it raises `DeviceStateChanged` even though `State` stays
+  `Offline`. It is always `Normal` on an older host.
+- **`IsAdbUnavailable`** on the manager is `true` while `Access` is `Available` but Macro Deck cannot find the
+  `adb` program: no device can appear and every operation fails with `AdbUnavailable`, so tell the user to
+  install the platform tools in **Settings > ADB** rather than to attach a device. A change raises
+  `AccessChanged`. It is always `false` on an older host.
+- **`DefaultDevice`** is the device to use when the user picked none: the default device chosen in
+  **Settings > ADB**, or the only attached device when none is chosen. It is `null` when none is chosen and
+  not exactly one device is attached. A chosen default device that has just gone away is still returned, so
+  check `FindDevice(DefaultDevice.Serial)` before you treat it as attached; its operations then fail with
+  `DeviceOffline` or `DeviceNotFound`. It is `null` on an older host.
 - **`DeviceDisconnected`** is also raised for every device when access is withdrawn.
 - **Handlers run on the connection's receive loop.** Keep them short and start real work, such as an
   operation on the device, without awaiting it in the handler. An exception from a handler is logged and
@@ -597,8 +668,37 @@ android.DeviceStateChanged += (_, e) =>
 | `InstallApkAsync(apkPath)` | Installs an APK, replacing an installed version of the same app. |
 | `UninstallPackageAsync(packageName)` | Uninstalls an app. |
 | `IsPackageInstalledAsync(packageName)` | Whether an app is installed. |
+| `SendKeyAsync(key)` | Presses one `AndroidKey`, such as `Home`, `Wakeup`, `Sleep`, `VolumeUp` or `MediaPlayPause`. |
+| `TapAsync(x, y)` | Taps the screen at a point, in screen pixels from the top left. |
+| `SwipeAsync(fromX, fromY, toX, toY, duration)` | Swipes from one point to another. |
+| `InputTextAsync(text)` | Types text into the focused field. |
+| `StartAppAsync(packageName)` | Starts an app's launcher activity, or brings the app to the front. |
+| `ForceStopAppAsync(packageName)` | Force-stops an app. |
+| `OpenUriAsync(uri)` | Opens a URI with the app the device picks for it. |
+| `RebootAsync(mode)` | Restarts the device into Android, recovery or the bootloader (`AndroidRebootMode`). |
+| `CaptureScreenshotAsync()` | Returns the current screen as PNG bytes. |
+| `GetStatusAsync()` | Returns whether the screen is on, whether the lock screen shows, and the foreground app. |
 
 Every operation is a round trip to Macro Deck, so do not call them in a tight loop.
+
+#### Keys, touches, apps and screenshots
+
+```csharp
+await device.SendKeyAsync(AndroidKey.Wakeup, cancellationToken);
+await device.StartAppAsync("com.spotify.music", cancellationToken);
+var png = await device.CaptureScreenshotAsync(cancellationToken);
+```
+
+- **These are fixed commands.** Macro Deck builds the adb command itself and validates and quotes every
+  argument, so they need no shell and keep working while Macro Deck is locked, see [Limits](#limits).
+  Coordinates are 0 to 8192, a swipe lasts at most five seconds, text is at most 500 characters, a URI at
+  most 2000. An argument outside these fails with `InvalidArgument` before adb runs.
+- **A screenshot is at most 8 MiB for a plugin.** It travels in chunks after the reply; a larger one fails
+  with `CommandFailed`.
+- **`GetStatusAsync` returns `null` until Macro Deck has a reading.** Macro Deck reads the screen state in
+  the background for every device someone asked about recently and shares the reading between callers, so
+  the first call starts the readings and returns `null`; ask again a few seconds later. A value the device
+  does not report is `null`.
 
 #### Shell commands
 
@@ -679,17 +779,48 @@ first two apart before you call anything.
 - **At most four calls in flight per plugin.** A fifth is refused at once with `RateLimited`; it is not
   queued. ADB calls also count toward the plugin's shared callback throttle.
 - **While Macro Deck is locked**, shell commands, pushes, pulls, installs, uninstalls and connects are refused with
-  `HostLocked`. Battery reads and `IsPackageInstalledAsync` still work.
+  `HostLocked`. Battery reads, `IsPackageInstalledAsync` and the fixed operations (keys, taps, swipes, text,
+  starting and stopping apps, opening a URI, reboots, screenshots and the status) still work, for plugins and
+  built-in integrations alike, so a deck button bound to one keeps working on a locked computer.
 - **Every operation has a time limit** on the host, about a minute for a shell command or an uninstall,
   five minutes for a push, pull or install, twenty seconds for a connect, and ten seconds for the battery
   and package queries. It then
   fails with `Timeout`. Pass a `CancellationToken` to give up sooner: cancelling also ends the call on the
   host.
 
+### Integrations built into Macro Deck
+
+Macro Deck's own integrations reach ADB through the same `IAndroidDeviceManager`, read from
+`IIntegrationContext.AndroidDevices` (see [ADR 0107](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0107-built-in-integrations-are-built-as-extractable-plugins.md)).
+For them `Access` is `Available` whenever ADB is enabled: they are part of Macro Deck, so neither
+**Allow plugins to use ADB** nor `host:adb` applies. Everything else does, the locked-host rule and the
+shell output limit included. Should such an integration ever move out of process, it becomes a plugin like
+any other and needs `host:adb` and the user's permission.
+
+The built-in ADB integration uses nothing else. Its actions run the fixed operations on the device the user
+picked or on `DefaultDevice`, its variables read `Devices`, `DefaultDevice`, `GetStatusAsync` and the
+battery, its issues use `LacksUsbPermission`, an action reports a missing adb from `IsAdbUnavailable`
+before it looks for a device, and it derives its own device events (connected,
+disconnected, authorized, unauthorized, online, offline) from `DeviceConnected`, `DeviceDisconnected` and
+`DeviceStateChanged`, remembering a device that went away for five minutes so that its return reads as
+online again.
+
+The built-in ADB integration's battery provider is written against this API alone and is a worked example
+of it: it publishes each device under `Info.StableId`, skips a device until it reports one, reads
+`GetBatteryStateAsync` on every change and every 15 seconds, and asks
+`getprop ro.build.characteristics` once per device to tell a tablet from a phone.
+
 ### Older hosts
 
 On a Macro Deck that predates this API, `Access` stays `Unsupported`, `Devices` stays empty and every
-operation fails with `Unsupported`. A plugin that uses ADB for an optional feature keeps working there with
+operation fails with `Unsupported`. A host that predates the fixed operations fails each of them with
+`Unsupported`, answers `GetStatusAsync` with `null`, reports `LacksUsbPermission` as `false` (such a device
+still reads `Unauthorized`), `Mode` as `Normal` (a device in recovery still reads `Offline`),
+`IsAdbUnavailable` as `false` and `DefaultDevice` as `null`. An `IAndroidDevice` or `IAndroidDeviceManager` you
+implemented yourself against an older SDK behaves the same way through the default interface members. A
+host that predates `StableId` leaves it `null`, and a context from a
+host that offers no ADB to integrations answers `context.AndroidDevices` with an always-`Unsupported`
+manager. A plugin that uses ADB for an optional feature keeps working there with
 that feature off. Set a minimum host version in
 [`compatibility.macroDeck`](https://docs.macro-deck.app/reference/manifest/#compatibility) if ADB is the point of your plugin.
 
@@ -710,11 +841,19 @@ Assert.That(phone.Calls.Single().Operation, Is.EqualTo(nameof(IAndroidDevice.Exe
 
 - **Access starts as `Available`.** `SetAccess` changes it and refuses every operation with the matching
   error, as a real host does. `AddDevice`, `RemoveDevice` and `SetDeviceState` raise the matching events.
-- **`FakeAndroidDevice`** records every call in `Calls`. `ShellHandler`, `Battery` and
-  `InstalledPackages` script its answers, and `Failure` makes every operation throw with that code.
-- **In a `PluginTestHarness`**, register the fake with
-  `builder.ConfigureServices((_, services) => services.AddSingleton<IAndroidDeviceManager>(android))`. The
-  harness offers no ADB of its own, so without the fake `Access` stays `Unsupported`.
+- **`FakeAndroidDevice`** records every call in `Calls`. `ShellHandler`, `Battery`, `Screenshot`, `Status`
+  and `InstalledPackages` script its answers, and `Failure` makes every operation throw with that code.
+- **`DefaultDeviceSerial`** on the manager names the default device; left `null`, `DefaultDevice` is the only
+  attached device. `SetLacksUsbPermission` and `SetDeviceMode` change a device's `LacksUsbPermission` and `Mode` and raise
+  `DeviceStateChanged`; `SetAdbUnavailable` changes `IsAdbUnavailable` and raises `AccessChanged`. A device removed and added again comes back as the same instance.
+- **`StableId`** on a `FakeAndroidDevice` sets `Info.StableId` later, like a host that reads it after the
+  device attached. No event is raised.
+- **In a `PluginTestHarness`**, `harness.Context.AndroidDevices` is the plugin's manager, both through DI and
+  through `context.AndroidDevices`. Its `Access` starts as `Unsupported`, as the harness has always
+  reported; call `SetAccess(AndroidDeviceAccess.Available)` and `AddDevice` to script it. A plugin that
+  registers its own manager with
+  `builder.ConfigureServices((_, services) => services.AddSingleton<IAndroidDeviceManager>(android))` keeps
+  it, and `context.AndroidDevices` then returns that one.
 
 ### Security
 
@@ -728,6 +867,375 @@ visible, switchable decision about plugins that use Macro Deck's connection. See
 - [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#adb) - the `adb` host API on the wire.
 - [Manifest](https://docs.macro-deck.app/reference/manifest/#permissions) - the permission vocabulary.
 - [Connect over USB](https://docs.macro-deck.app/guide/usb-connection/) - how users set up ADB.
+- [Batteries](https://docs.macro-deck.app/features/batteries/) - Android batteries are already in the battery catalog, readable without `host:adb`.
+
+## Batteries
+
+> Source: https://docs.macro-deck.app/features/batteries/
+>
+> Report battery levels of phones, headphones, controllers and other devices with IBatteryProvider, and read every provider's devices with IIntegrationContext.Batteries - device model, removed and withdrawn devices, stable ids, limits, older hosts, security and testing.
+
+Macro Deck keeps one catalog of battery-powered devices: phones, headphones, controllers, mice, keyboards
+and the like. A **battery provider** reports the devices it knows and their charge; Macro Deck shows them
+in the Battery widget, gives each one variables, and lets every plugin read the whole catalog.
+
+You publish, Macro Deck never asks. The provider polls or listens however its devices need and pushes
+what it finds; there is no host-side polling to answer.
+
+### Quick start
+
+An integration implements `IBatteryProvider` next to its other interfaces. The one below reports the
+battery of a wireless headset:
+
+```csharp
+using MacroDeck.Sdk;
+using MacroDeck.Sdk.Batteries;
+
+public sealed class HeadsetIntegration(IHeadsetWatcher watcher) : IPluginIntegration, IBatteryProvider
+{
+	private IBatteryProviderContext? _batteries;
+
+	public string ProviderName => "Example Headsets";
+
+	public async Task InitializeAsync(IBatteryProviderContext context, CancellationToken cancellationToken = default)
+	{
+		_batteries = context;
+		await context.PublishAsync([.. watcher.Headsets.Select(Describe)], cancellationToken);
+		watcher.Changed += OnHeadsetChanged;
+	}
+
+	public Task ShutdownAsync(CancellationToken cancellationToken = default)
+	{
+		watcher.Changed -= OnHeadsetChanged;
+		_batteries = null;
+		return Task.CompletedTask;
+	}
+
+	private void OnHeadsetChanged(object? sender, Headset headset)
+		=> _ = _batteries?.PublishAsync(Describe(headset));
+
+	private static BatteryDevice Describe(Headset headset) => new()
+	{
+		Id = headset.PairingId,
+		Name = headset.Name,
+		Kind = BatteryDeviceKinds.Headphones,
+		LevelPercent = headset.Level,
+		ChargeState = headset.IsCharging ? BatteryChargeState.Charging : BatteryChargeState.Discharging,
+		IsConnected = headset.IsInRange
+	};
+
+	// IPluginIntegration members omitted.
+}
+```
+
+The headset now appears in the Battery widget's device list, and Macro Deck creates its
+`battery_<name>_<hash>_level`, `_charging`, `_connected`, `_state`, `_time_remaining_minutes`,
+`_time_to_full_minutes` and `_health` variables under your plugin (see [Variables](#variables)).
+
+Things to know:
+
+- **Order is fixed.** Macro Deck calls `IBatteryProvider.InitializeAsync` after the integration's own
+  `InitializeAsync`, and `IBatteryProvider.ShutdownAsync` before the integration stops.
+- **The context is yours until `ShutdownAsync` returns.** Keep it and publish whenever something changes.
+- **Devices are always published under your plugin or integration.** Nothing in a `BatteryDevice` names
+  its owner, so you cannot publish or remove another provider's devices.
+- **`ProviderName` is optional.** Left empty, Macro Deck shows your plugin's or integration's name.
+
+### Publishing devices
+
+| `IBatteryProviderContext` member | What it does |
+| --- | --- |
+| `PublishAsync(device)` | Adds a device, or replaces the one published under the same `Id`. |
+| `PublishAsync(devices)` | Adds or replaces several devices in one call. All or nothing: when one is refused, none is applied. An empty list does nothing. |
+| `RemoveAsync(deviceId)` | Removes a device for good. Removing an unknown id does nothing. |
+
+`BatteryDevice` is a record with init-only properties. Every property is checked when it is set, so an
+instance that exists is always publishable:
+
+| Property | Meaning |
+| --- | --- |
+| `Id` | Required. Your own stable id for the device - see [Stable ids](#stable-ids). |
+| `Name` | Required. The name Macro Deck shows. |
+| `Kind` | One of `BatteryDeviceKinds`, `other` by default - see [Kinds](#kinds). |
+| `LevelPercent` | 0 to 100, or `null` when the device does not report one. Outside the range throws `ArgumentOutOfRangeException`. |
+| `ChargeState` | `Unknown`, `Discharging`, `Charging`, `Full`, or `NotCharging` (on power but not charging). |
+| `IsConnected` | Whether the device is reachable right now. `true` by default. |
+| `TimeRemaining`, `TimeToFull` | Optional estimates. Negative throws `ArgumentOutOfRangeException`. |
+| `Health` | `Unknown`, `Good`, `Overheat`, `Dead`, `OverVoltage`, `Cold` or `Failure`. |
+
+A list that contains `null` or the same id twice throws `ArgumentException`; a publish that would leave you
+with more than 64 devices throws `InvalidOperationException` - see [Limits](#limits). The exact bounds are
+in
+[`BatteryLimits.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/sdk/src/MacroDeck.Sdk/Batteries/BatteryLimits.cs).
+
+Publish a change when it happens and nothing in between: an unchanged device costs a round trip for
+nothing.
+
+#### Kinds
+
+`phone`, `tablet`, `laptop`, `headphones`, `watch`, `controller`, `mouse`, `keyboard`, `speaker`, `other`,
+as constants on `BatteryDeviceKinds`. The kind picks the icon a reader draws. A reader shows a kind it does
+not know as `other`, and a charge state or health it does not know as unknown, so a newer provider keeps
+working with an older Macro Deck.
+
+### Connected, withdrawn and removed
+
+A device leaves the catalog in two different ways, and readers treat them differently:
+
+| What happened | Who does it | What readers see |
+| --- | --- | --- |
+| **Out of reach**: unplugged, out of range, switched off | You publish it with `IsConnected = false` | The device stays, shown as not connected, with its name and last level. Its `_state` reads `disconnected` and both time variables read 0. |
+| **Withdrawn**: your provider stopped or was initialized again, the user turned your plugin or integration off, your plugin's session ended, Macro Deck shut down | Macro Deck | The device leaves the list but may come back under the same id. Its variables stay: `_connected` and `_charging` are false, `_state` reads `disconnected`, `_time_remaining_minutes` and `_time_to_full_minutes` read 0, and `_level` and `_health` keep the last reported values; a widget showing it shows its stored name as not available. |
+| **Removed for good**: unpaired, forgotten, deleted | You call `RemoveAsync` | The device leaves the list and its id is in `RemovedIds`. Its variables are deleted. |
+
+So keep a device you merely lost contact with published as not connected, and remove it only once it is
+gone for good. You never have to clean up on the way out: when your provider stops, Macro Deck withdraws
+its devices itself, and the next `InitializeAsync` publishes them again.
+
+**Re-initializing starts from an empty set.** When Macro Deck initializes your provider again while your
+plugin stays connected, for example after the user changed its configuration, the devices you published
+before are withdrawn first, and the new `InitializeAsync` publishes what the new configuration covers. A
+device you no longer report is therefore not left behind, but it is only withdrawn: its variables stay, with
+`_connected` false and `_state` reading `disconnected`. Call `RemoveAsync` before the provider stops for a device that is gone for good, such as
+one the user removed from your configuration.
+
+### Variables
+
+You write no variable code for your devices. Macro Deck writes the seven variables of every device itself
+and files them under the plugin or integration that published it, so they are listed with your other
+variables and an Android phone's are listed under the ADB integration. What each one reads is described in
+[Battery variables](https://docs.macro-deck.app/guide/concepts/#battery-variables).
+
+- **Do not create these names yourself.** Macro Deck never takes over a variable you created: if yours
+  already has a device variable's name, that one variable is not written for the device. `IVariableApi.GetAllAsync` lists them among your variables;
+  leave them alone rather than deleting them.
+- **They never go stale.** Macro Deck pushes them, so they stay available however long a level stays the
+  same, unlike a variable you declare for polling.
+- **They follow your devices.** A withdrawn device keeps its variables as not connected, a device you
+  remove for good loses them, and they are deleted with the rest of your variables when the user uninstalls
+  your plugin.
+
+### Stable ids
+
+`Id` is the device's identity, and readers store it: a Battery widget configured for one device keeps
+that device's id, and the device's variable names carry a hash of it. Publishing the same id again
+updates the device; a new id is a new device.
+
+- **Derive it from something that stays the same** across restarts and reconnects, such as a pairing id,
+  never from a connection handle or a list position.
+- **Do not publish a hardware serial or anything else the user would not share.** Every plugin can read
+  the id. Hash it with a secret of your own if the stable source is sensitive, the way the
+  [ADB provider](#the-adb-provider) does.
+- **Readers see a qualified id.** Macro Deck prefixes your id with the provider that published it,
+  `<plugin or integration id>:<your id>`, so two providers never collide.
+
+### Reading devices
+
+Every integration reads the whole catalog, whoever published it, through `IIntegrationContext.Batteries`:
+
+| `IBatteryApi` member | What it does |
+| --- | --- |
+| `Devices` | Every device currently published, as `BatteryDeviceSnapshot`. Empty until Macro Deck has sent the first list. |
+| `Find(id)` | The device with that qualified id, or `null`. |
+| `Changed` | Raised after `Devices` changed. `RemovedIds` lists the qualified ids removed for good in that change. |
+
+A `BatteryDeviceSnapshot` carries the published fields plus `Id` (qualified), `LocalId`, `ProviderId`,
+`ProviderName` and `UpdatedAt`, when Macro Deck last received a report for it.
+
+- **A device absent from `Devices` and not in `RemovedIds` was withdrawn** and may come back under the same
+  id. Keep what you stored about it.
+- **`RemovedIds` is best effort.** A plugin that was disconnected while a device was removed does not see
+  the removal; `Devices` is always complete.
+- **Handlers run on a background thread.** One that throws is logged and does not affect the others.
+  Handlers subscribed through `IIntegrationContext.Batteries` are released when Macro Deck shuts your
+  integration down or initializes it again. In a plugin, `IBatteryApi` can also be taken from dependency
+  injection; handlers subscribed there are yours to remove.
+
+A widget that shows the device with the lowest battery, live:
+
+```csharp
+using MacroDeck.Sdk;
+using MacroDeck.Sdk.Batteries;
+using MacroDeck.Sdk.Ui;
+using MacroDeck.Ui.Components;
+using MacroDeck.Ui.Dsl;
+using MacroDeck.Ui.Model.Surfaces;
+using MacroDeck.Ui.Runtime;
+
+public sealed class LowestBatteryIntegration : IPluginIntegration, IUiProvider
+{
+	private IBatteryApi _batteries = UnsupportedBatteryApi.Instance;
+
+	public Task InitializeAsync(IIntegrationContext context)
+	{
+		_batteries = context.Batteries;
+		return Task.CompletedTask;
+	}
+
+	public IReadOnlyList<UiSurfaceDeclaration> Surfaces { get; } =
+		[new() { Kind = UiSurfaceKinds.Widget, SessionMode = UiSessionModes.Shared }];
+
+	public Task<IUiSession?> CreateSessionAsync(UiSessionRequest request, CancellationToken cancellationToken)
+	{
+		if (request.Surface.Kind != UiSurfaceKinds.Widget)
+		{
+			return Task.FromResult<IUiSession?>(null);
+		}
+
+		var batteries = _batteries;
+		var lowest = new UiState<BatteryDeviceSnapshot?>(Lowest(batteries.Devices));
+		void OnChanged(object? sender, BatteryDevicesChangedEventArgs e) => lowest.Value = Lowest(batteries.Devices);
+		batteries.Changed += OnChanged;
+
+		var root = new UiStack
+		{
+			Key = "lowest",
+			Children =
+			[
+				new UiTextRun { Key = "name", Text = UiText.From(() => lowest.Value?.Name ?? string.Empty) },
+				new UiTextRun
+				{
+					Key = "level",
+					Text = UiText.From(() => lowest.Value?.LevelPercent is { } level ? $"{level} %" : "--"),
+					Size = 0.4
+				}
+			]
+		};
+
+		return Task.FromResult<IUiSession?>(
+			new ViewSession(new UiView(request.Surface, root), onDispose: () => batteries.Changed -= OnChanged));
+	}
+
+	private static BatteryDeviceSnapshot? Lowest(IReadOnlyList<BatteryDeviceSnapshot> devices)
+		=> devices.Where(device => device is { IsConnected: true, LevelPercent: not null })
+			.MinBy(device => device.LevelPercent);
+
+	// Other IPluginIntegration members omitted.
+}
+```
+
+`ViewSession` is the adapter from [Serving a view](https://docs.macro-deck.app/ui/views/sessions/#example) with one addition: it runs
+`onDispose` in `DisposeAsync`, so a closed session stops listening. Writing a `UiState` from the
+`Changed` handler is safe on any thread, and only the text that reads it is patched.
+
+### Limits
+
+- **At most 64 devices per provider** at a time (`BatteryLimits.MaxDevicesPerProvider`). A publish that
+  would exceed it is refused as a whole; publishing 64 devices in one list is one call.
+- **Ids and names** are at most 128 characters, a kind at most 32. Empty or whitespace is refused.
+- **A list is all or nothing**, in the SDK and on the host: one invalid device refuses the whole call
+  and nothing is applied.
+- **Calls count toward your plugin's callback throttle.** The SDK retries a call refused with
+  `RATE_LIMITED` once, after a second; a burst beyond that fails. Publish changes, not a timer's every tick.
+
+### In a plugin
+
+`MacroDeck.Plugin.Hosting` declares the `battery-provider` capability for you when an integration
+implements `IBatteryProvider`, starts the provider once the plugin is connected and its integration has
+initialized, and stops it on shutdown. No permission is needed, to publish or to read.
+
+- **Reconnects are handled.** The SDK remembers the set you published. When the connection drops and the
+  session resumes, it resends the whole set in one call, so you publish nothing again. When a new session
+  starts instead, Macro Deck initializes your provider again and you publish from scratch.
+- **Your devices go with your session.** When your plugin stops or its session ends, Macro Deck withdraws
+  the devices that session published. Uninstalling the plugin does the same.
+- **A configuration change withdraws too.** Before the SDK initializes your provider again within the
+  same session, it asks Macro Deck to withdraw what you published.
+- **While the user has turned your plugin off**, what you publish is kept but not shown, and appears again
+  when it is turned back on, without a new publish.
+
+### Built-in integrations
+
+A built-in integration implements the same `IBatteryProvider` and reads the same
+`IIntegrationContext.Batteries`; nothing crosses a wire. Turning such an integration off stops its
+provider and withdraws its devices; turning it on again initializes the provider, which publishes them
+again.
+
+#### The ADB provider
+
+Macro Deck's own ADB integration is the reference provider. It reports every Android phone and tablet
+that has authorized the computer, while ADB is enabled and the ADB integration is turned on. It uses only
+the public SDK: the devices, their connection events and their battery readings come from
+`IIntegrationContext.AndroidDevices`, the same `IAndroidDeviceManager` a plugin uses (see
+[Android devices](https://docs.macro-deck.app/features/android-devices/)), so it would keep working if it were moved into a plugin.
+See
+[`AdbBatteryProvider.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/host/src/MacroDeckHost.Integrations/Adb/AdbBatteryProvider.cs).
+It shows the rules on this page in practice:
+
+- **A stable id that reveals nothing.** The id is the device's `StableId`, a keyed hash of its hardware
+  serial with a key that belongs to this install of Macro Deck, so the same phone keeps its id over USB and
+  Wi-Fi and across restarts, while the serial itself is never published or stored. A widget imported from
+  another install therefore shows the device's stored name as not available.
+- **Out of reach is not removed.** A phone that disconnects stays published with `IsConnected = false`;
+  it is connected again as soon as one of its USB or wireless connections returns. The provider never
+  calls `RemoveAsync` on a disconnect.
+- **Push on change, poll slowly.** It publishes when a device connects or is authorized and refreshes the
+  levels every 15 seconds, publishing only devices that changed.
+
+### Older versions of Macro Deck
+
+- **A plugin on an older host.** A Macro Deck that predates battery providers answers a publish with
+  `CAPABILITY_UNSUPPORTED`. The SDK logs this once and turns every later publish into a no-op, so your
+  provider keeps running without errors. `IIntegrationContext.Batteries` stays empty and never raises
+  `Changed`. Set a minimum host version in [`compatibility.macroDeck`](https://docs.macro-deck.app/reference/manifest/#compatibility)
+  if batteries are the point of your plugin.
+- **An older plugin on a newer host.** A plugin built before battery providers declares no
+  `battery-provider` capability and ignores the `batteries` state the host sends to every plugin.
+- **An `IIntegrationContext` of your own**, such as a test double, keeps compiling: `Batteries` is a default
+  interface member that returns `UnsupportedBatteryApi.Instance`.
+
+### Security
+
+**Every plugin can read every battery device**, including the ones of other plugins and Android phones
+reported over ADB, whether or not plugins may use ADB. That is deliberate: a battery level, a name and a
+kind are what a deck shows anyway, and gating them would leave widgets of other plugins blank. So publish
+nothing in a name or id that you would not show every plugin: no serial numbers, no account names you
+would not put on a deck. See [the security model](https://docs.macro-deck.app/policies/security/#battery-devices).
+
+### Testing
+
+`MacroDeck.Plugin.Testing` has a fake for each side:
+
+```csharp
+using MacroDeck.Plugin.Testing.Fakes;
+using MacroDeck.Sdk.Batteries;
+
+var batteries = new FakeBatteryProviderContext();
+await new HeadsetIntegration(new FakeHeadsetWatcher("pad-1", level: 80)).InitializeAsync(batteries);
+
+Assert.That(batteries.Devices["pad-1"].LevelPercent, Is.EqualTo(80));
+Assert.That(batteries.Publishes, Has.Count.EqualTo(1));
+```
+
+- **`FakeBatteryProviderContext`** keeps the host's rules: publishing a known id replaces the device, a
+  list is all or nothing, and more than 64 devices is refused. Assert on `Devices`, `Publishes` and
+  `RemovedIds`.
+- **`FakeBatteryApi`** is the reader's side. `Set(devices, removedIds)` replaces the catalog and raises
+  `Changed`; `SubscriberCount` tells you whether your code still listens.
+- **In a `PluginTestHarness`**, `harness.Context.Batteries` is the `FakeBatteryApi` behind
+  `IIntegrationContext.Batteries`, and `harness.Context.BatteryProvider` the `FakeBatteryProviderContext`
+  your provider publishes into. `InitializeIntegrationsAsync` starts battery providers against it.
+
+See [Testing](https://docs.macro-deck.app/features/testing/#testing-batteries).
+
+### Over the plugin protocol
+
+| Direction | What | Operations |
+| --- | --- | --- |
+| Plugin to host | `batteries` host API | `publish` (add or replace up to 64 devices), `remove` (remove ids for good), `sync` (replace the plugin's whole set, used after a resumed reconnect), `withdraw` (withdraw the session's devices, used before a provider is initialized again) |
+| Host to plugin | `battery-provider` capability kind, version 1 | `describe` (the provider name) |
+| Host to every plugin | `host.state` for `batteries` | The whole catalog with a revision and the ids removed since the previous one |
+
+A call without the declared `battery-provider` capability is `CAPABILITY_UNAVAILABLE`; an invalid device or
+a set above the limit is `INVALID_PAYLOAD` and nothing is applied. See
+[`batteries` in the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#batteries).
+
+### See also
+
+- [Android devices](https://docs.macro-deck.app/features/android-devices/) - Macro Deck's ADB connection for your own operations.
+- [Variables](https://docs.macro-deck.app/features/variables/) - how integration variables work.
+- [Widget types](https://docs.macro-deck.app/ui/views/widget-types/) - offering a widget of your own.
+- [Testing](https://docs.macro-deck.app/features/testing/) - the fakes and the test harness.
 
 ## Button icons
 
@@ -1406,6 +1914,376 @@ id you do not know as a failed outcome. See [Testing](https://docs.macro-deck.ap
 - [Localization](https://docs.macro-deck.app/features/localization/)
 - [Testing](https://docs.macro-deck.app/features/testing/)
 
+## Companion devices
+
+> Source: https://docs.macro-deck.app/features/companion-devices/
+>
+> Read what the phones and tablets connected through the Companion app report, send them commands and take screenshots with ICompanionDeviceApi - the host:companion-devices permission, the user's control, events, results, limits and testing.
+
+A plugin can read what the phones and tablets connected through the Macro Deck Companion app report about
+themselves (battery, orientation, brightness, network, model and more), send them commands such as
+**Vibrate** or **Set screen brightness**, and capture a screenshot of their deck or their whole screen.
+Macro Deck owns the connections: your plugin never connects, pairs or removes a device, and never talks to
+the app directly.
+
+### Quick start
+
+Declare the permission in `manifest.json`:
+
+```json
+"permissions": ["host:companion-devices"]
+```
+
+Then take `ICompanionDeviceApi` from dependency injection:
+
+```csharp
+using MacroDeck.Localization;
+using MacroDeck.Sdk;
+using MacroDeck.Sdk.Actions;
+using MacroDeck.Sdk.Companion;
+
+public sealed class TabletIntegration(ICompanionDeviceApi companion) : IPluginIntegration
+{
+	public IReadOnlyList<IActionDefinition> Actions => [new DimTabletAction(companion)];
+
+	// Other IPluginIntegration members omitted.
+}
+
+internal sealed class DimTabletAction(ICompanionDeviceApi companion) : IActionDefinition
+{
+	public string Id => "dim-tablet";
+
+	public LocalizedText Name => Strings.Actions.DimTablet();
+
+	public LocalizedText Description => Strings.Actions.DimTabletDescription();
+
+	public IReadOnlyList<ActionParameter> Parameters { get; } =
+		[ActionParameter.Text("device", label: Strings.Parameters.Device(), required: true)];
+
+	public IActionExecutor CreateExecutor() => new Executor(companion);
+
+	private sealed class Executor(ICompanionDeviceApi companion) : IActionExecutor
+	{
+		public async Task<ActionResult> ExecuteAsync(ActionExecutionContext context)
+		{
+			if (companion.Access != CompanionDeviceAccess.Available)
+			{
+				return ActionResult.Failed(ActionErrorCodes.PermissionDenied, Strings.Errors.CompanionNotAllowed());
+			}
+
+			if (context.Parameters.GetValueOrDefault("device") is not string text ||
+				!Guid.TryParse(text, out var deviceId) ||
+				companion.FindDevice(deviceId) is not { } device)
+			{
+				return ActionResult.Failed(ActionErrorCodes.NotConnected, Strings.Errors.TabletNotConnected());
+			}
+
+			var command = CompanionDeviceCommand.SetBrightness(10);
+			if (!device.State.ConfirmsCommands)
+			{
+				return await companion.SendAsync(deviceId, command, context.CancellationToken)
+					? ActionResult.Success()
+					: ActionResult.Failed(ActionErrorCodes.NotConnected, Strings.Errors.TabletNotConnected());
+			}
+
+			var result = await companion.RequestAsync(deviceId, command, context.CancellationToken);
+			return result.Outcome == CompanionDeviceCommandOutcome.Failed
+				? ActionResult.Failed(ActionErrorCodes.ProviderError, Strings.Errors.TabletRefused())
+				: ActionResult.Success();
+		}
+	}
+}
+```
+
+The user gets a **Dim tablet** action that turns the brightness of the device with that id down to 10 %.
+
+Things to know:
+
+- **Resolve it from DI, or read `context.CompanionDevices`.** Take it in a constructor, like any other
+  service; the SDK registers it for every plugin. `IIntegrationContext.CompanionDevices` returns the same
+  instance, for code that only has the context.
+- **Check `Access` before you rely on it.** Whether your plugin may use Companion devices is the user's
+  decision, off until they allow it, and can change while your plugin runs - see [Who decides](#who-decides).
+- **Macro Deck owns the devices.** A device appears when the app connects and reports its state, and
+  disappears when it disconnects or the user removes it.
+
+### Declaring `host:companion-devices`
+
+An installed plugin reaches Companion devices only when its manifest lists `host:companion-devices` in
+[`permissions`](https://docs.macro-deck.app/reference/manifest/#permissions). It is one of the two permissions the host enforces,
+next to [`host:adb`](https://docs.macro-deck.app/features/android-devices/#declaring-hostadb); every other entry in the vocabulary is
+still declared for disclosure only. If plugins are not allowed to use Companion devices when the user
+installs the first version of your plugin that declares it, Macro Deck asks the user whether to allow it.
+It does not ask again for an update of a version that already declared it.
+
+A plugin you run yourself during development, through a
+[developer token](https://docs.macro-deck.app/reference/authentication/#developer-token-headless-enrolment) or
+[interactive pairing](https://docs.macro-deck.app/reference/authentication/#self-registering-interactive-pairing), counts as declaring
+it, because you admitted it by hand. Declare it anyway: the packaged plugin needs it. The user's switch
+still applies to such a plugin.
+
+### Who decides
+
+`Access` is `Available` only when both of these hold:
+
+| Condition | Where the user controls it | `Access` otherwise |
+| --- | --- | --- |
+| Plugins may use Companion devices | **Settings > Companion App**, **Plugin access**, **Allow plugins to use Companion devices** (off by default) | `NotAllowed` |
+| The plugin declares `host:companion-devices` | The installed version's manifest | `NotAllowed` |
+
+The user sees the permission before and after installing: the install dialog says the plugin uses the
+devices connected through Macro Deck Companion, and the plugin's page lists **Uses Companion devices**.
+When a plugin that declares `host:companion-devices` is installed while **Allow plugins to use Companion
+devices** is off, Macro Deck asks the user in a dialog, **A plugin wants to use your Companion devices**, and
+keeps the question in its notifications; **Allow** turns the setting on. It asks the same way, once per run
+of Macro Deck, when your plugin calls an operation and is refused; a plugin that does not declare
+`host:companion-devices` is refused without asking. That switch covers every plugin that declares the
+permission, not only yours. The user guide describes all of this in
+[Plugins and your Companion devices](https://docs.macro-deck.app/guide/companion-app/tips/#plugins-and-your-companion-devices).
+
+| `CompanionDeviceAccess` | Meaning |
+| --- | --- |
+| `Unsupported` | The host has not reported access yet, or predates this API. |
+| `Available` | This plugin may use Companion devices now. |
+| `NotAllowed` | The user has not allowed plugins to use Companion devices, or the manifest does not declare `host:companion-devices`. |
+
+Tell the user what to turn on rather than a generic failure: only the user can change it.
+`AccessChanged` is raised whenever the value changes.
+
+### Devices and events
+
+```csharp
+private readonly ConcurrentDictionary<Guid, long> _greeted = new();
+
+companion.DeviceReady += (_, e) =>
+{
+	if (e.Device is { } device && _greeted.GetValueOrDefault(device.Id) != device.ReadySequence)
+	{
+		_greeted[device.Id] = device.ReadySequence;
+		_ = companion.SendAsync(device.Id, CompanionDeviceCommand.Vibrate);
+	}
+};
+```
+
+- **`Devices` lists the connected devices that have reported their state**, and is empty unless `Access`
+  is `Available`. `FindDevice(id)` returns one of them, or `null`.
+- **A device is a snapshot.** `CompanionDevice` is a record of `Id`, `ReadySequence` and `State`. A new
+  report replaces it, so read `FindDevice` again rather than keeping an old instance.
+- **`Id`** is the device's id in Macro Deck, a GUID, the same id its deck client and its configuration
+  in the built-in Companion integration use.
+- **`ReadySequence`** changes every time the device becomes ready again after it was gone, and only then.
+  Two `DeviceReady` events with the same value describe the same connection; remember the last value per
+  device, as above, to do something once per connection.
+- **`DeviceReady`** is raised when a device reports its first state since it connected, and for every
+  device in `Devices` when access becomes `Available`.
+- **`DeviceChanged`** is raised after a device reported its state, and with `Device` set to `null` when it
+  disconnected or was removed, and for every device when access is withdrawn.
+- **`WaitForDeviceAsync(id)`** waits for a device that has just connected to report its state. It answers
+  `true` at once for a device in `Devices`, and `false` when the device has no open connection or does not
+  report within a few seconds.
+- **Handlers run on a background thread**, in the order the changes arrived. One that throws is logged and
+  does not affect the others.
+
+#### What a device reports
+
+`State` is a `CompanionDeviceState`. A value Macro Deck could not read, or that the device does not
+report, is `null`; percentages are 0 to 100 and texts at most 64 characters.
+
+| Property | Meaning |
+| --- | --- |
+| `BatteryLevelPercent`, `IsCharging` | The battery. |
+| `Orientation` | `portrait` or `landscape` (`CompanionOrientations`). |
+| `ScreenBrightnessPercent` | The screen brightness. |
+| `Model`, `Platform`, `AppVersion` | The device model, its operating system with version (for example `Android 14`), and the Companion app version. |
+| `InFocus` | Whether Macro Deck is in front on the device. |
+| `NetworkType` | `wifi`, `cellular`, `ethernet`, `vpn` or `none` (`CompanionNetworkTypes`). |
+| `NetworkMetered`, `NetworkValidated` | Whether the network is metered, and whether it reaches the internet. |
+| `NetworkName` | The Wi-Fi network's name, only with the `networkName` capability. |
+| `CpuUsagePercent`, `MemoryUsedPercent` | Only with the `cpu` and `memory` capabilities. |
+| `Capabilities` | What the device can do right now. |
+| `RequestableCapabilities` | What it can do after asking its user, see [Capabilities and device prompts](#capabilities-and-device-prompts). |
+| `ConfirmsCommands` | Whether the device confirms commands, see [Send or request](#send-or-request). |
+
+### Operations
+
+| `ICompanionDeviceApi` member | What it does |
+| --- | --- |
+| `SendAsync(id, command)` | Sends a command without waiting for the device to carry it out. `false` when the device is not connected or `Access` is not `Available`. |
+| `RequestAsync(id, command)` | Sends a command and waits for the device's answer, a `CompanionDeviceCommandResult`. |
+| `CaptureScreenshotAsync(id, mode)` | Captures the deck or the whole screen as a PNG, a `CompanionScreenshotResult`. |
+| `WaitForDeviceAsync(id)` | Waits for a device that has just connected to report, see [above](#devices-and-events). |
+
+Commands are created with the static members of `CompanionDeviceCommand`:
+
+| Command | What it does | Needs |
+| --- | --- | --- |
+| `Vibrate` | Vibrates the device. | - |
+| `SetBrightness(percent)` | Sets the screen brightness, 0 to 100; anything else throws `ArgumentOutOfRangeException`. | - |
+| `SetOrientation(orientation)` | `automatic`, `portrait` or `landscape`; anything else throws `ArgumentException`. | - |
+| `ScreenOn` | Turns the screen on and shows this Macro Deck. | `screenOn` |
+| `ScreenOff` | Turns the screen off. | `screenOff` |
+| `Focus` | Brings Macro Deck to the front on the device. | `focus` |
+
+What each platform supports is in the user guide's
+[What Macro Deck can do with a device](https://docs.macro-deck.app/guide/companion-app/tips/#what-macro-deck-can-do-with-a-device).
+
+#### Send or request
+
+`SendAsync` hands the command to the device and returns; it cannot tell whether the device carried it out.
+`RequestAsync` waits for the answer, and is the right call only for a device whose `ConfirmsCommands` is
+`true`, or for a capability in `RequestableCapabilities`, where the device asks its user first. A device
+that does not confirm leaves every request to wait until it times out.
+
+| `CompanionDeviceCommandOutcome` | Meaning |
+| --- | --- |
+| `Done` | The device confirmed it carried the command out. |
+| `Unconfirmed` | The device accepted the command but did not confirm it in time, so it may or may not have run. |
+| `Failed` | The command did not run; `Failure` says why. |
+
+The device has a minute to accept a command and a further few seconds to confirm it once accepted.
+Cancelling the token withdraws a command the device has not accepted yet and throws
+`OperationCanceledException`; once the device accepted it, the request waits for the answer.
+
+#### Capabilities and device prompts
+
+`Capabilities` and `RequestableCapabilities` hold the names in `CompanionDeviceCapabilities`: `screenOn`,
+`screenOff`, `focus`, `screenshotDeck`, `screenshotFull`, `networkName`, `cpu` and `memory`. A later Macro
+Deck may report names that are not listed; treat an unknown name as one your plugin does not use.
+
+A capability in `RequestableCapabilities` is one the device can use once its user grants a permission on
+the device, such as Android's permission to turn the screen off. A request that needs it shows that prompt
+on the device and fails with `ConsentDenied` when the user declines. `RequestableCapabilities` never
+contains a name that is already in `Capabilities`.
+
+#### Screenshots
+
+```csharp
+var shot = await companion.CaptureScreenshotAsync(deviceId, CompanionScreenshotMode.Deck, cancellationToken);
+if (shot.Png is { } png)
+{
+	await File.WriteAllBytesAsync(path, png, cancellationToken);
+}
+```
+
+- **`Deck`** captures only the deck, without asking the device's user. It needs `screenshotDeck`, and fails
+  with `Unavailable` while the deck is not on screen.
+- **`FullScreen`** captures the whole screen. It needs `screenshotFull`, which the device grants only after
+  its user agreed on the device, so a capture can show a prompt there and fails with `ConsentDenied` when
+  the user declines. Allowing plugins in Macro Deck does not change that.
+- **A capture waits like a request**, with up to a minute once the device accepted it.
+- **`Png` is set exactly when `Failure` is `null`.** A screenshot larger than 8 MiB fails with `Failed` for
+  a plugin; it travels in chunks after the reply.
+
+#### Failures
+
+`RequestAsync` and `CaptureScreenshotAsync` do not throw for a refused or failed call; they answer with a
+`CompanionDeviceFailure`. Only cancelling your token throws.
+
+| `CompanionDeviceFailure` | Meaning | What to do |
+| --- | --- | --- |
+| `NotConnected` | The device is not connected or disconnected before it answered, or the host does not offer Companion devices. | Wait for `DeviceReady`. |
+| `Removed` | The user removed the device while the request was running. | Forget the device. |
+| `TimedOut` | The device did not answer in time. | Retry, or use `SendAsync` for a device that does not confirm. |
+| `ConsentDenied` | The device's user declined the permission the request needs. | Tell the user to allow it on the device. |
+| `Unavailable` | The device cannot do this right now, such as a deck screenshot while the deck is not on screen. | Retry later. |
+| `Failed` | The device tried and failed, or the host refused the call. | Treat as a failure. |
+| `NotAllowed` | This plugin may not use Companion devices. | See [Who decides](#who-decides). |
+
+Later versions may add values; treat an unknown one like `Failed`.
+
+### Limits
+
+- **At most four calls in flight per plugin.** A fifth is refused at once rather than queued, which a
+  request or screenshot reports as `Failed` and a send as `false`. Calls also count toward the plugin's
+  shared callback throttle. Other host APIs keep flowing while a request waits for a device.
+- **A screenshot is at most 8 MiB** for a plugin.
+- **The SDK gives up after the host's own windows plus a margin**: about 15 seconds for
+  `WaitForDeviceAsync`, 20 for `SendAsync`, and two and a half minutes for `RequestAsync` and
+  `CaptureScreenshotAsync`. Pass a `CancellationToken` to give up sooner: cancelling also ends the call on
+  the host.
+
+### Integrations built into Macro Deck
+
+Macro Deck's own integrations reach Companion devices through the same `ICompanionDeviceApi`, read from
+`IIntegrationContext.CompanionDevices` (see [ADR 0107](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0107-built-in-integrations-are-built-as-extractable-plugins.md)).
+For them `Access` is always `Available`: they are part of Macro Deck, so neither **Allow plugins to use
+Companion devices** nor `host:companion-devices` applies, and `AccessChanged` is never raised. Should such
+an integration ever move out of process, it becomes a plugin like any other and needs the permission and
+the user's consent.
+
+The built-in Macro Deck Companion integration uses nothing else. Its actions send the commands and
+screenshots above, its variables read each device's `State`, and its **device ready** event is published
+from `DeviceReady`, once per `ReadySequence`. See
+[`CompanionIntegration.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/host/src/MacroDeckHost.Integrations/Companion/CompanionIntegration.cs).
+
+### Older hosts
+
+On a Macro Deck that predates this API, `Access` stays `Unsupported`, `Devices` stays empty, no event is
+raised, `SendAsync` and `WaitForDeviceAsync` answer `false`, and `RequestAsync` and
+`CaptureScreenshotAsync` fail with `NotConnected`. Nothing throws. An `IIntegrationContext` you implemented
+yourself against an older SDK, such as a test double, keeps compiling: `CompanionDevices` is a default
+interface member that returns `UnsupportedCompanionDeviceApi.Instance`, which behaves the same way. A
+plugin that uses Companion devices for an optional feature keeps working there with that feature off. Set
+a minimum host version in [`compatibility.macroDeck`](https://docs.macro-deck.app/reference/manifest/#compatibility) if Companion
+devices are the point of your plugin.
+
+### Testing
+
+`MacroDeck.Plugin.Testing` has an in-memory `FakeCompanionDeviceApi`:
+
+```csharp
+var companion = new FakeCompanionDeviceApi();
+var tablet = Guid.NewGuid();
+companion.Connect(tablet, new CompanionDeviceState { ConfirmsCommands = true, BatteryLevelPercent = 80 });
+
+await new TabletDimmer(companion).DimAsync(tablet);
+
+Assert.That(companion.Calls.Single().Command, Is.EqualTo(CompanionDeviceCommand.SetBrightness(10)));
+```
+
+- **Access starts as `Available`** with no devices. `SetAccess` changes it and raises `AccessChanged`;
+  while it is `NotAllowed`, requests and screenshots fail with `NotAllowed`, as on a real host.
+- **`Connect`** adds or reconnects a device with a new `ReadySequence` and raises `DeviceChanged` and
+  `DeviceReady`; **`Report`** replaces what it reports and raises `DeviceChanged`; **`Disconnect`** removes
+  it and raises `DeviceChanged` with no device. Events are raised synchronously on the calling thread.
+- **`OnRequest` and `OnScreenshot`** decide how requests and screenshots end. A request answers `Done`
+  and a screenshot fails with `Unavailable` until you set them.
+- **`Calls`** records every send, request and screenshot in order, refused ones included.
+- **In a `PluginTestHarness`**, `harness.Context.CompanionDevices` is the plugin's fake, both through DI
+  and through `context.CompanionDevices`. Its `Access` starts as `Unsupported`, like a host that has not
+  reported yet; call `SetAccess(CompanionDeviceAccess.Available)` and `Connect` to script it.
+
+See [Testing](https://docs.macro-deck.app/features/testing/#testing-companion-devices).
+
+### Security
+
+`host:companion-devices` is user control and consent, not a sandbox. A plugin process runs with the
+user's full privileges. What the permission gives the user is a visible, switchable decision, off until
+they turn it on, about plugins that read their phones' state, send them commands and capture their
+screens through Macro Deck. A plugin that is allowed sees everything listed in
+[What a device reports](#what-a-device-reports), including the Wi-Fi network's name, and a deck screenshot
+shows whatever the deck shows, other plugins' widgets included. A full screen screenshot still needs the
+device's own user to agree on the device. See
+[the security model](https://docs.macro-deck.app/policies/security/#companion-devices).
+
+### Over the plugin protocol
+
+| Direction | What | Operations |
+| --- | --- | --- |
+| Plugin to host | `companion-devices` host API | `wait` (a device that just connected), `send` (fire and forget), `request` (wait for the answer), `screenshot` (the PNG follows over `host.asset.*` with kind `companion-screenshot`) |
+| Host to plugin | `host.state` for `companion-devices`, per plugin | `access` (`available` or `not-allowed`), the devices when available, and a revision |
+
+A call while the plugin's access is not `available` is refused with `COMPANION_DEVICES_NOT_ALLOWED`. See
+[`companion-devices` in the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#companion-devices).
+
+### See also
+
+- [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#companion-devices) - the `companion-devices` host API on the wire.
+- [Manifest](https://docs.macro-deck.app/reference/manifest/#permissions) - the permission vocabulary.
+- [Companion app tips](https://docs.macro-deck.app/guide/companion-app/tips/) - what users do with Companion devices.
+- [Android devices](https://docs.macro-deck.app/features/android-devices/) - Macro Deck's ADB connection, the other enforced permission.
+- [Batteries](https://docs.macro-deck.app/features/batteries/) - battery levels of every device, readable without a permission.
+
 ## Deck and clients
 
 > Source: https://docs.macro-deck.app/features/deck/
@@ -1919,6 +2797,292 @@ Registration, interactions and icon fetches travel the other way as the `devices
 - [WebSocket reference](https://docs.macro-deck.app/reference/websocket/) - the wire format for the tables above.
 - [Testing](https://docs.macro-deck.app/features/testing/) - the fakes and the test harness.
 
+## Email inboxes
+
+> Source: https://docs.macro-deck.app/features/email-inboxes/
+>
+> Expose email inboxes with IEmailInboxProvider - inbox ids, status and counts, the newest messages, change notifications, limits, and what Macro Deck builds on top.
+
+An integration exposes email inboxes by implementing `IEmailInboxProvider`. It lists the inboxes it can
+read, and for each inbox returns a snapshot: whether it is connected, how many messages are unread and in
+total, and the newest messages with their sender, subject and a short preview. Macro Deck merges the
+inboxes of every provider, so the user's email widget, variables and triggers work with your service next to
+the built-in IMAP integration without any further code.
+
+Connecting an account is not part of this contract. Signing in, storing passwords or tokens and asking the
+user to sign in again belong to your [setup flow](https://docs.macro-deck.app/features/setup-flows/) and your
+[integration issues](https://docs.macro-deck.app/features/integration-issues/). `IEmailInboxProvider` only reads, and never the full
+body of a message.
+
+### Quick start
+
+```csharp
+using MacroDeck.Sdk;
+using MacroDeck.Sdk.Actions;
+using MacroDeck.Sdk.Email;
+
+public sealed class TeamMailIntegration : IPluginIntegration, IEmailInboxProvider
+{
+	private Dictionary<string, TeamMailClient> _clients = [];
+	private IReadOnlyList<EmailInbox> _inboxes = [];
+
+	public IReadOnlyList<IActionDefinition> Actions { get; } = [];
+
+	public event EventHandler<EmailInboxChangedEventArgs>? Changed;
+
+	public async Task InitializeAsync(IIntegrationContext context)
+	{
+		var clients = new Dictionary<string, TeamMailClient>();
+		var inboxes = new List<EmailInbox>();
+
+		// One inbox per config entry your setup flow created.
+		foreach (var entry in await context.Config.GetEntriesAsync())
+		{
+			var id = entry.Id.ToString("N");
+			var client = new TeamMailClient(await context.Config.GetSecretAsync(entry.Id, "token"));
+			client.MailboxChanged += (_, _) => Changed?.Invoke(this, new EmailInboxChangedEventArgs(id));
+			clients[id] = client;
+			inboxes.Add(new EmailInbox { Id = id, DisplayName = entry.Title, Address = client.Address });
+		}
+
+		_clients = clients;
+		_inboxes = inboxes;
+		Changed?.Invoke(this, new EmailInboxChangedEventArgs(null));
+	}
+
+	public Task ShutdownAsync() => Task.CompletedTask;
+
+	public IReadOnlyList<EmailInbox> GetInboxes() => _inboxes;
+
+	public async Task<EmailInboxSnapshot> GetSnapshotAsync(
+		string inboxId, EmailMessageQuery query, CancellationToken ct)
+	{
+		// An inbox this provider no longer knows is a failure, not an empty inbox.
+		var client = _clients.TryGetValue(inboxId, out var found)
+			? found
+			: throw new InvalidOperationException($"Unknown inbox '{inboxId}'.");
+
+		var mailbox = await client.ReadAsync(query.MaxMessages, query.UnreadOnly, ct);
+
+		return new EmailInboxSnapshot
+		{
+			Status = client.IsConnected ? EmailInboxStatus.Connected : EmailInboxStatus.Disconnected,
+			UnreadCount = mailbox.Unread,
+			TotalCount = mailbox.Total,
+			SyncedAt = mailbox.SyncedAt,
+			Messages =
+			[
+				.. mailbox.Messages.Select(m => new EmailMessage
+				{
+					Id = m.Id,
+					SenderName = m.FromName,
+					SenderAddress = m.FromAddress,
+					Subject = m.Subject ?? string.Empty,
+					Preview = m.Snippet,
+					ReceivedAt = m.ReceivedAt,
+					IsRead = m.IsRead
+				})
+			]
+		};
+	}
+}
+```
+
+Register it like any integration, with `RegisterIntegration<TeamMailIntegration>()` in `Program.cs`. The
+SDK sees `IEmailInboxProvider` and declares the `email-inbox` capability for you. Add an
+`IConfigFlowProvider` with `AllowsMultipleConfigurations` so the user can connect one account per entry.
+
+Things to know:
+
+- **Inbox ids are local and permanent.** Return the id you chose, not a qualified one. The host stores the
+  user's inbox selection and trigger filters as `integrationId::inboxId`, and names the inbox's variables
+  once, the first time it sees the id. An id that changes on restart turns every inbox into a new one: its
+  widget selection is lost and it gets new variables. A config entry id is a good choice.
+- **`GetInboxes` is synchronous and called often.** Return a cached list, as above.
+- **Raise `Changed` when something changed.** With an inbox id when that inbox's messages, counts or status
+  changed; with `null` when inboxes were added, removed or renamed. Raise it as often as changes happen:
+  bursts are coalesced before anything reads again.
+- **You only read.** The host decides when to read, caches the snapshots and drives every widget,
+  variable and trigger from that cache. It never marks a message as read or changes the mailbox.
+
+### The contract
+
+`IEmailInboxProvider` and its records carry the full rules in their XML docs. The ones that decide whether
+your provider behaves correctly:
+
+| Member | Rules |
+| --- | --- |
+| `GetInboxes()` | Each `Id` is a valid resource local id (non-empty, at most 256 characters, no whitespace and no `::`), unique within the provider and stable across restarts. An inbox that breaks this is skipped and logged. `DisplayName` is shown to the user; `Address` is optional. No status here: an unreachable inbox stays in the list. |
+| `GetSnapshotAsync` | The inbox's `Status`, `UnreadCount` and `TotalCount` for the whole inbox, and at most `query.MaxMessages` messages, **newest first**. `SyncedAt` says when the data was last brought up to date. |
+| `EmailMessageQuery` | `MaxMessages` is between 1 and 50 and defaults to 10. With `UnreadOnly`, return the newest **unread** messages wherever they are in the inbox, not the unread ones among the newest. |
+| `EmailMessage` | `Id` is unique within the inbox and stable across reads; it is how the host tells new mail from mail it has already seen. `Subject` is empty when the message has none. `Preview` is a short plain-text excerpt or `null`, never the body. |
+| `Changed` | `InboxId` set: read that inbox again. `null`: read the inbox list again, then every inbox. May be raised on any thread. |
+
+#### Status, not exceptions, for a known state
+
+`GetSnapshotAsync` reports what you know and throws only when you cannot answer at all:
+
+| Situation | Return |
+| --- | --- |
+| Connected and the read worked. | `Connected` with current counts and messages. |
+| Connecting for the first time, or reconnecting after a short drop. | `Connecting` with the last known data, empty if there is none yet. |
+| The server cannot be reached for now. | `Disconnected` with the last known data and a `StatusMessage`. |
+| The user has to act, for example the sign-in was refused. | `Error` with the last known data and a `StatusMessage` that says what to do, ideally next to an [integration issue](https://docs.macro-deck.app/features/integration-issues/). |
+| The read failed and you have nothing to return, or the inbox id is unknown. | Throw. |
+
+The host shows the inbox's status next to its data, and an Email Inbox widget that shows only this inbox
+shows its `StatusMessage` while it is not connected. It fires the **Inbox Connected** and **Inbox
+Disconnected** triggers when it changes between connected and not connected; `Connecting` changes neither.
+After a thrown read it keeps the last data, marks it as out of date and tries again shortly; only a second
+failure in a row counts as disconnected. Write `StatusMessage` in the user's language, see
+[Localization](https://docs.macro-deck.app/features/localization/). Honour the cancellation token and let
+`OperationCanceledException` propagate.
+
+#### Message ids
+
+The host decides which messages are new by comparing ids between two `Connected` snapshots, and fires
+**Email Received** once per new id. The first `Connected` snapshot of an inbox fires nothing, and a snapshot
+with any other status never counts as the inbox's contents, so answering `Connecting` with no data does not
+make the mail you report afterwards look new. Make the id stable for as long as the message exists, for
+example an IMAP UIDVALIDITY and UID pair:
+
+```csharp
+new EmailMessage
+{
+	Id = $"{folder.UidValidity}-{uid}", // stable while the folder keeps its UIDVALIDITY
+	SenderAddress = "bob@example.com",
+	Subject = "Lunch?",
+	ReceivedAt = internalDate
+};
+```
+
+An id that changes between reads makes old mail look new. If your service ever renumbers every message at
+once, as an IMAP UIDVALIDITY change does, the host recognizes that none of the new ids is newer than what it
+had and fires nothing.
+
+#### Telling the host about changes
+
+Raising `Changed` is the only push this contract has. In a plugin, `MacroDeck.Plugin.Hosting` forwards it to
+the host as a `state.update` for the `email-inbox` kind, after holding it back for 250 ms per inbox so a
+burst becomes one message. Calling `CatalogChanged("email-inbox", inboxId)` on the injected
+`IPluginCatalogNotifier` yourself has exactly the same effect, and `CatalogChanged("email-inbox")` with no id
+is the same as raising `Changed` with `null`.
+
+A provider that never raises `Changed` still works: the host also reads every inbox after a user's
+**Refresh Email Inboxes** and on a fallback poll every five minutes. New mail simply shows up that much later.
+
+### What Macro Deck builds on it
+
+Implementing `IEmailInboxProvider` is all it takes for your inboxes to appear in everything Macro Deck
+offers for email. You declare none of it:
+
+- The **Email Inbox** widget, which shows the unread count of one or several inboxes, or a list of the
+  newest messages with sender, subject, preview and time, and whose settings list your inboxes by name with
+  the provider beside them.
+- Global variables such as `email_unread_count` and `email_inbox_count`, and per inbox
+  `email_<name>_unread_count`, `email_<name>_total_count`, `email_<name>_latest_sender`,
+  `email_<name>_latest_subject`, `email_<name>_latest_received_at` and `email_<name>_is_connected`, where
+  `<name>` comes from the inbox's display name the first time the host sees it and is kept after a rename.
+  At most 40 inboxes get variables. While your integration is disabled, its inboxes keep their variables,
+  which read as unavailable.
+- The triggers **Email Received**, filterable by inbox and by exact sender and subject, **Unread Count
+  Changed**, **Email Read or Unread**, **Inbox Connected** and **Inbox Disconnected**, under the event
+  provider `email`. Their payload values are `inbox`, `inboxName`, `sender`, `senderAddress`, `subject`,
+  `preview`, `messageId`, `receivedAt`, `unreadCount`, `previousUnreadCount` and `isRead`. **Email
+  Received** does not fire for the messages an inbox already has when the host starts or when the inbox first
+  appears; mail that arrived while the inbox was unreachable fires once when it is back.
+- The **Refresh Email Inboxes** action, which reads every inbox right away instead of waiting for the next
+  change.
+
+The [user guide](https://docs.macro-deck.app/guide/concepts/#email-inbox-widget) describes them from the user's side. Do not build your own versions
+of these. If your service offers more, such as archiving a message, add [actions](https://docs.macro-deck.app/features/actions/) of
+your own.
+
+`ProviderName` is optional. Leave it out and the integration's name (the manifest name for a plugin) is
+shown next to the inbox. Set it when one integration exposes a distinctly branded service.
+
+### Edge cases
+
+- **An inbox disappears.** Drop it from `GetInboxes` and raise `Changed` with `null`. It leaves the widgets
+  and its variables are removed; widget and trigger filters naming it simply match nothing.
+- **Invalid or duplicate inbox ids** are skipped and logged. An id two integrations of one plugin both list
+  belongs to the first.
+- **A read fails.** The inbox keeps its last data, marked as out of date, until a later read succeeds.
+- **The plugin stops or crashes.** Its inboxes keep their last data and show as disconnected until it is
+  back.
+- **The same mailbox in two providers**, such as one account connected twice, shows twice: the host has no
+  way to know they are one inbox.
+
+### Optional abilities later
+
+The contract is read-only on purpose. Abilities such as marking a message as read, archiving or moving it,
+reading its full body or listing other folders will be added as separate interfaces a provider may implement
+next to `IEmailInboxProvider`, the way `IMusicPlayerDeviceProvider` sits next to `IMusicPlayerProvider`. They
+will be optional: a provider that implements none of them keeps working unchanged, and Macro Deck only offers
+an ability for the inboxes whose provider has it.
+
+### Over the plugin protocol
+
+Email inboxes are fully supported out of process, as capability kind `email-inbox`, version `1`, declared
+once at the local id `provider`. Its operations are `describe`, `inboxes` and `snapshot`; the
+[WebSocket reference](https://docs.macro-deck.app/reference/websocket/#email-inbox) lists their arguments and results.
+
+- **The inbox list is a snapshot.** The host serves `GetInboxes` from the last `describe` or `inboxes`
+  reply, and reads `inboxes` again after a `state.update` without a local id.
+- **A change names the inbox.** A `state.update` whose `localId` is an inbox id makes the host read that
+  inbox's `snapshot` again, nothing else: the plugin is not described again and nothing re-registers.
+- **The status travels by name.** `status` is the `EmailInboxStatus` member name; a host treats a name it
+  does not know as `Disconnected`.
+- **Replies are bounded.** `MacroDeck.Plugin.Hosting` keeps at most 32 inboxes, asks your provider for at
+  most 50 messages, cuts long subjects, previews, sender names and addresses, and, when a `snapshot` reply
+  would still exceed its size limit, drops its oldest messages and marks the reply as truncated. The exact
+  limits are in the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#email-inbox).
+- **Failures stay failures.** An unreachable plugin, a timeout or an exception in your provider reaches the
+  host as a failed read, never as an empty inbox.
+- **Older hosts.** A Macro Deck that predates email inboxes rejects the `email-inbox` declaration
+  non-fatally: the session carries on, and your actions, variables and everything else keep working. Your
+  inboxes simply do not appear.
+
+See [Capability parity](https://docs.macro-deck.app/reference/capability-parity/).
+
+### Testing
+
+`harness.EmailInbox`, an `EmailInboxTestClient`, drives the `email-inbox` capability the way the host does,
+with the protocol's argument records from `MacroDeck.Plugin.Protocol.Capabilities.EmailInbox`:
+
+```csharp
+await using var harness = PluginTestHarness.Create(builder =>
+	builder.RegisterIntegration<TeamMailIntegration>());
+var entry = harness.Context.Config.AddEntry("Work");
+harness.Context.Config.SeedSecret(entry, "token", "test-token");
+await harness.InitializeIntegrationsAsync();
+
+var outcome = await harness.EmailInbox.GetSnapshotAsync(new EmailInboxSnapshotArguments
+{
+	InboxId = entry.ToString("N"),
+	MaxMessages = 5,
+	UnreadOnly = true
+});
+
+Assert.That(outcome.Succeeded, Is.True, outcome.Error?.Message);
+Assert.That(outcome.DataAs<EmailInboxSnapshotResult>()!.Messages.Select(m => m.Subject), Is.EqualTo(["Lunch?"]));
+```
+
+Here `TeamMailClient` talks to a fake of the mail service, the one real external boundary.
+`DescribeAsync` and `GetInboxesAsync` cover the other operations, and the session `MacroDeckTestHost`
+returns has the same `EmailInbox` client over the real wire, where raising `Changed` shows up in
+`host.Messages` as a `state.update`. What you get back is what the host gets: the status as a name, the
+field limits applied, and an inbox id you do not know as a failed outcome. In the harness, the 250 ms hold on
+`Changed` runs on `harness.Clock`. See [Testing](https://docs.macro-deck.app/features/testing/).
+
+### See also
+
+- [Setup flows](https://docs.macro-deck.app/features/setup-flows/) - connecting accounts.
+- [Integration issues](https://docs.macro-deck.app/features/integration-issues/) - asking the user to sign in again.
+- [Events](https://docs.macro-deck.app/features/events/) - triggers of your own beside the built-in email ones.
+- [Localization](https://docs.macro-deck.app/features/localization/)
+- [Testing](https://docs.macro-deck.app/features/testing/)
+
 ## Events
 
 > Source: https://docs.macro-deck.app/features/events/
@@ -2138,6 +3302,26 @@ as different modifiers, so a trigger bound as `Ctrl` does not fire for `RightCtr
 
 `FromMacOS` reads the input source with the Text Input Sources API, which Apple documents for the main thread. It
 has been exercised from a thread-pool thread, not from an event tap callback.
+
+To send a key the other way, from a `KeyCode` to the native code a synthetic key event needs, the letter,
+digit and punctuation keys of the main block have their US position on each platform:
+
+```csharp
+if (NativeKeys.IsPositional(key) && NativeKeys.TryGetWindowsScanCode(key, out var scan))
+{
+	// SendInput with KEYEVENTF_SCANCODE, so the key lands on the same position on any layout
+}
+```
+
+| Method | Answers |
+| --- | --- |
+| `NativeKeys.IsPositional(key)` | `true` for the punctuation keys, which type a different character on each layout and are best sent by position |
+| `NativeKeys.TryGetWindowsScanCode(key, out scan)` | The PC set-1 scan code; Linux evdev numbers these keys the same way |
+| `NativeKeys.TryGetMacOSKeyCode(key, out code)` | The `kVK_*` key code, with WebKit's ISO naming (`IntlBackslash` 10, `Backquote` 50) |
+| `NativeKeys.TryFromWindowsScanCode(scan, out key)` | The key at a scan code's US position, the inverse of `TryGetWindowsScanCode` |
+
+Each `TryGet` method returns `false` for keys outside that block (function, navigation, media and modifier
+keys), which a hook sends by their virtual key or key code instead.
 
 `GetBindings()` returns values exactly as the editor stored them, so a hook that swallows bound combos has
 to accept the older spellings too, not only the names in the table.
@@ -2416,6 +3600,118 @@ member names. See [capability parity](https://docs.macro-deck.app/reference/capa
 - [Setup flows](https://docs.macro-deck.app/features/setup-flows/) - where `StartConfigFlow` sends the user.
 - [Logging](https://docs.macro-deck.app/features/logging/) - for diagnostic detail.
 - [Localization](https://docs.macro-deck.app/features/localization/#the-generated-api) - where `Strings.*` comes from.
+
+## Integration storage
+
+> Source: https://docs.macro-deck.app/features/integration-storage/
+>
+> Keep small text documents of your own across restarts with IIntegrationContext.Storage - keys, atomic writes, validators, unreadable documents, where the files live, backups, older hosts and testing.
+
+`IIntegrationContext.Storage` keeps small text documents an integration owns, such as the devices it has
+seen or a cache it wants back after a restart. Each document has a key; you decide its format, usually JSON.
+Settings the user enters belong in [configuration entries](https://docs.macro-deck.app/features/setup-flows/) instead, and secrets in
+their secret fields.
+
+```csharp
+private const string DevicesKey = "known-devices.json";
+
+public async Task InitializeAsync(IIntegrationContext context)
+{
+	var read = await context.Storage.ReadAsync(DevicesKey, IsDeviceList);
+	_canSave = read.Status != IntegrationStorageReadStatus.Unreadable;
+	_devices = read.Content is { } json ? JsonSerializer.Deserialize<List<Device>>(json)! : [];
+	_storage = context.Storage;
+}
+
+private async Task SaveAsync()
+{
+	if (_canSave)
+	{
+		await _storage.WriteAsync(DevicesKey, JsonSerializer.Serialize(_devices));
+	}
+}
+
+private static bool IsDeviceList(string json)
+{
+	try
+	{
+		return JsonSerializer.Deserialize<List<Device>>(json) is not null;
+	}
+	catch (JsonException)
+	{
+		return false;
+	}
+}
+```
+
+### Keys
+
+A key is 1 to 64 characters of lowercase ASCII letters, digits, `.`, `_` and `-`, starts with a letter or a
+digit, and does not end in `.tmp` or `.bak`, which storage uses for its own copies. Check one with
+`IntegrationStorageKeys.IsValid`; every operation throws `ArgumentException` for an invalid key. Keys are
+private to your integration: another integration's `devices.json` is a different document.
+
+### Reading and writing
+
+| Call | What it does |
+| --- | --- |
+| `ReadAsync(key, isValid)` | Answers an `IntegrationStorageReadResult`: `Found` with the `Content`, `Missing` when nothing was ever stored, or `Unreadable`. |
+| `WriteAsync(key, content)` | Replaces the document. `content` must not be empty; use `DeleteAsync` to remove a document. |
+| `DeleteAsync(key)` | Removes the document and its copies. A missing key is not an error. |
+
+A write never leaves a half-written document behind. It writes a temporary copy, flushes it to disk, keeps
+the previous document as a backup and only then puts the new one in place. A read tries the document, then
+a pending temporary copy, then the backup, and answers the first one `isValid` accepts. Without a validator
+every copy that is not empty counts, so pass one whenever you can tell a damaged document apart, and keep it
+free of side effects: a validator that throws rejects that copy.
+
+`Unreadable` means copies exist but none is valid, for example after a disk error or an edit by hand. Treat
+it as "do not touch": keep working with defaults, but do not write the key again in that session, or the
+next write replaces the only copies the user could still recover. Storage itself never deletes or repairs
+them.
+
+### Where the documents live
+
+- **Built into Macro Deck**: `integration-data/<integration id>/` in Macro Deck's data directory. The folder
+  is part of the **Integrations** component of a [backup](https://docs.macro-deck.app/guide/backups/), so restoring it brings the
+  documents back together with the integration's configuration.
+- **In a plugin**: `integration-data/<plugin id>/` in the data directory the host gives the plugin
+  (`PluginHostOptions.DataDirectory`, see [plugin hosting](https://docs.macro-deck.app/reference/plugin-hosting/#iintegrationcontext)).
+  It survives plugin updates and rollbacks. Storage never crosses the plugin protocol, so it works the same
+  on every Macro Deck version. A plugin started without a data directory, such as one run outside the
+  supervisor without `MACRO_DECK_PLUGIN_DATA_DIRECTORY`, reads every key as `Missing`, and a write throws
+  `InvalidOperationException`.
+
+Documents are files, not a database: keep them small, a few hundred kilobytes at most, and write them when
+something changed rather than on a timer. Calls on the same integration's storage run one at a time.
+
+### Older hosts and other implementations
+
+`Storage` is a default interface member. A context from a Macro Deck that predates it, and any
+`IIntegrationContext` implementation that does not override it, return `UnavailableIntegrationStorage`:
+every read is `Missing`, a delete does nothing and a write throws `InvalidOperationException`. Catch that
+exception where saving is optional.
+
+### Testing
+
+`FakeIntegrationContext.Storage` is an in-memory `FakeIntegrationStorage` with the same key rules and read
+outcomes. Seed a document with `Set`, make a key hold damaged copies with `SetUnreadable`, and read what the
+integration wrote with `Get`:
+
+```csharp
+await using var harness = PluginTestHarness.Create(builder => builder.RegisterIntegration<MyIntegration>());
+harness.Context.Storage.SetUnreadable("known-devices.json");
+
+await harness.InitializeIntegrationsAsync();
+
+Assert.That(harness.Context.Storage.Get("known-devices.json"), Is.Null);
+```
+
+### See also
+
+- [Setup flows](https://docs.macro-deck.app/features/setup-flows/) - settings and secrets the user enters.
+- [Plugin hosting](https://docs.macro-deck.app/reference/plugin-hosting/) - the plugin data directory.
+- [Capability parity](https://docs.macro-deck.app/reference/capability-parity/) - how storage differs between built-in integrations and plugins.
 
 ## Layout providers
 
@@ -2894,6 +4190,29 @@ plugin's catalog has not reached the host yet.
 
 Against a host older than protocol v3, the SDK resolves descriptor text (action names, labels) in your
 default language before sending it. You do not need to handle this case.
+
+### Formatting a time of day
+
+Text you build yourself, such as "Resumes at 3:05 PM" in an issue description, should use the time format
+the user chose in Macro Deck, not the culture of your process. Ask `context.Locale` for it each time you
+build the text, because the user can change the language, the time format setting or the operating system
+clock at any time:
+
+```csharp
+var format = await context.Locale.GetTimeOfDayFormatAsync();
+var text = Strings.Issues.ResumesAt(time: format.Format(TimeOnly.FromDateTime(resumesAt.LocalDateTime)));
+```
+
+`TimeOfDayFormat` (`MacroDeck.Sdk.Locale`) carries the `Culture` of the Macro Deck interface and the
+`HourCycle`, `HourCycles.H12` or `HourCycles.H23`: the user's 12-hour or 24-hour setting, or the operating
+system's when the setting follows the system. `Format` writes the culture's short time pattern in that hour
+cycle; a 12-hour clock in a culture without AM/PM designators is written as `h:mm tt` in the invariant
+culture.
+
+A plugin's call crosses as `locale`/`time-of-day-format`. A Macro Deck that predates it, and a context that
+does not implement `Locale`, answer the process's current culture with a 24-hour clock. In tests, set
+`FakeIntegrationContext.Locale.TimeOfDayFormat`. Times inside your own UI trees need none of this: the
+[time component](https://docs.macro-deck.app/ui/components/time/) already follows the reader's language and hour cycle.
 
 ### Testing translations
 
@@ -3728,7 +5047,8 @@ UiResource? cover = await context.UiResources.RegisterMusicPlayerArtworkAsync(
 	cancellationToken);
 ```
 
-- **Where the two ids come from.** Nothing in the SDK lists other integrations' players. Both ids appear in
+- **Where the two ids come from.** The instance id is the `Id` of a player in
+  [`MusicPlayers.Instances`](#reading-every-providers-players). Both ids also appear in
   the URL that a player's `*-album-art-url` variable holds, for example
   `/api/music-player/artwork/c0ffee?instanceId=net.example.jukebox%3A%3Adefault`: the last path segment is
   the `artworkId` and the `instanceId` query value is the qualified instance id, both URL-encoded, so decode
@@ -3739,16 +5059,22 @@ UiResource? cover = await context.UiResources.RegisterMusicPlayerArtworkAsync(
   bytes yourself: it counts against the [quota](https://docs.macro-deck.app/ui/reference/resources/#registering-your-own-images), is
   released with the session, and registering the name again replaces it. Macro Deck may re-encode the image,
   so the media type can differ from the player's. Use one fixed name per place the cover is shown.
+- **Size.** Pass `maxSize`, the size in pixels the cover is shown at, to get a smaller image:
+  `RegisterMusicPlayerArtworkAsync(name, instanceId, artworkId, maxSize: 256, cancellationToken)`. Macro
+  Deck keeps every cover at full size, at most 640 pixels on its longer side, and as 128 and 256 pixel
+  copies when it is larger than those, and registers the smallest copy at least `maxSize` pixels, or the
+  full-size cover when no copy is. Without `maxSize`, and on a Macro Deck that predates it, you get the
+  full-size cover, so a smaller image is a saving, never a requirement.
 - **`null`** when Macro Deck knows no such player or the player has no artwork for that id. Nothing is
   registered or removed then, so the name keeps its previous picture.
-- **Errors.** `ArgumentException` for an invalid name, before anything is sent. `UiResourceException` with
+- **Errors.** `ArgumentException` for an invalid name and `ArgumentOutOfRangeException` for a `maxSize` that
+  is not positive, before anything is sent. `UiResourceException` with
   `QuotaExceeded`; `RateLimited`, because this call has a tighter budget than other registrations and at most
-  four run at once; `Unsupported` on a Macro Deck that predates it or an
-  [in-process integration](https://docs.macro-deck.app/reference/capability-parity/); or `Failed`. `Failed` covers a player that does
+  four run at once; `Unsupported` on a Macro Deck that predates it; or `Failed`. `Failed` covers a player that does
   not answer within 20 seconds, where retrying can succeed, and artwork larger than `maxUiResourceBytes` or
   of a media type Macro Deck does not accept, where it cannot.
-- Any plugin can ask for the artwork of any player, the same images the deck shows to every client. Listing
-  players is not part of this call.
+- Any plugin can ask for the artwork of any player, the same images the deck shows to every client. To list
+  the players, read [`MusicPlayers`](#reading-every-providers-players).
 
 In tests, `FakeUiResourceRegistry.AddMusicPlayerArtwork(instanceId, artworkId, bytes, mediaType)` seeds what
 the call finds, and `MacroDeckTestHost` answers it over the wire as a Macro Deck without other players.
@@ -3967,6 +5293,52 @@ public ValueTask<VariableWriteResult> SetValueAsync(string localId, object? valu
 	};
 ```
 
+#### Reading every provider's players
+
+`IIntegrationContext.MusicPlayers` lists the players of every enabled provider, other plugins' and Macro
+Deck's own included, and tells you the colour of each one's cover:
+
+| `IMusicPlayerApi` member | What it does |
+| --- | --- |
+| `Instances` | Every player as `MusicPlayerInstanceSnapshot`: `Id` (`providerId::instanceId`), `ProviderId`, `ProviderName` and `DisplayName`. Empty until Macro Deck has sent the first list. |
+| `InstancesChanged` | Raised after `Instances` changed. |
+| `GetAlbumColorAsync(instanceId)` | The average colour of the player's cover as lowercase `#rrggbb`, the value of its `music_player_<name>_album_color` variable. |
+
+```csharp
+public async Task InitializeAsync(IIntegrationContext context)
+{
+	foreach (var player in context.MusicPlayers.Instances)
+	{
+		var color = await context.MusicPlayers.GetAlbumColorAsync(player.Id);
+		_logger.Information("{Player} shows {Color}", player.DisplayName, color ?? "no cover");
+	}
+
+	context.MusicPlayers.InstancesChanged += (_, _) => RefreshPicker();
+}
+```
+
+- **No permission is needed.** Any plugin may read any provider's players, just as any plugin may already
+  register any player's cover with `RegisterMusicPlayerArtworkAsync`. The list holds what the deck shows every
+  client: ids, provider names and display names, never playback state or account details.
+- **The colour** is derived from the cover Macro Deck already holds and cached per cover, so asking again for
+  the same cover is cheap. While a player shows no cover, is not connected, or its cover cannot be read, you
+  get the last colour derived for that player. `null` when there is none, when Macro Deck knows no such
+  player, and when it could not answer, including a Macro Deck that predates the call. The first call for a
+  new cover may fetch it from its provider, so it can take a few seconds; in a plugin it counts towards the
+  four artwork lookups that may run at once and is refused as `RateLimited` beyond that, which the SDK
+  reports as `null`.
+- **Handlers run on a background thread.** One that throws is logged and does not affect the others.
+  Handlers subscribed through `IIntegrationContext.MusicPlayers` are released when Macro Deck shuts your
+  integration down or initializes it again. In a plugin, `IMusicPlayerApi` can also be taken from dependency
+  injection; handlers subscribed there are yours to remove.
+- **Older Macro Deck and older SDK.** A context from a Macro Deck without the list, and any
+  `IIntegrationContext` implementation compiled before it existed, reports no players, never raises the event
+  and answers `null` for every colour. A plugin built against an older SDK never asks and ignores the push.
+
+In tests, `FakeIntegrationContext.MusicPlayers` is a `FakeMusicPlayerApi`: `Set(players)` replaces the list and
+raises `InstancesChanged`, and `SetAlbumColor(instanceId, color)` sets what `GetAlbumColorAsync` answers.
+`PluginTestHarness` also registers it as the plugin's `IMusicPlayerApi`.
+
 `MusicPlayerVariableWrites` gives a bound Slider the same write behaviour as the built-in players:
 volume streams while the user drags, position commits on release, values are clamped, and a missing
 player answers `Unavailable`. See [Writable variables](https://docs.macro-deck.app/features/variables/#writable-variables).
@@ -3985,7 +5357,10 @@ player answers `Unavailable`. See [Writable variables](https://docs.macro-deck.a
 
 ### Over the plugin protocol
 
-Music players are fully supported out of process (capability kind `music-player`). The instance list is
+Music players are fully supported out of process (capability kind `music-player`). Reading every
+provider's players is the separate `music-players` host api: the list arrives as a revisioned `host.state`
+push and the colour as `music-players`/`album-color`, see
+[the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#music-players). The instance list is
 a snapshot, so after `GetInstances` changes (an account was added in your config flow, or an instance's
 `Options` changed), call `CatalogChanged(CapabilityKinds.MusicPlayer)` on an injected `IPluginCatalogNotifier`.
 Options travel as optional fields within `music-player` version 1: the instance list carries them, and
@@ -4481,6 +5856,7 @@ Every `StartAsync` and `SubmitAsync` returns a `ConfigFlowResult`:
 | `Error(step, message, fieldErrors)` | Shows `step` again with a general message and/or per-field messages keyed by field name. Values from this submit are discarded. |
 | `External(url, resumeStepId)` | Opens `url` in the browser, waits for the redirect callback, then submits `resumeStepId`. See [OAuth](#oauth). |
 | `Complete(title, values)` | Saves the entry: all collected form values plus the extra `values`. |
+| `CompleteWithoutEntry()` | Closes the dialog and stores nothing. See [Completing without an entry](#completing-without-an-entry). |
 
 ### Multi-step flows
 
@@ -4645,6 +6021,11 @@ provider's authorize URL and exchange the code; `AuthorizationCode` is `null` un
 arrived. Show `RedirectUri` as a copy value when the user has to register it with the provider. Do not
 start your own callback listener. The built-in Spotify integration is a complete example.
 
+A flow that talks to the service while it runs, to test a connection or exchange a code, should send the
+User-Agent the user configured: `context.Http.UserAgent`, the same value as `IIntegrationContext.Http`, also
+before the integration was ever initialized. See
+[Outgoing HTTP requests](https://docs.macro-deck.app/reference/plugin-hosting/#outgoing-http-requests).
+
 ### Reconfiguring an entry
 
 ```csharp
@@ -4720,6 +6101,155 @@ With `RequiresConfiguration` set to `false`:
 to 3.0.0-beta.14 ignore it and treat every flow as required, so on those the integration still waits for
 the flow to be completed once.
 
+### Completing without an entry
+
+Some integrations create their entries themselves, for example one per device as each device connects, so
+the dialog has nothing to store. Finish such a flow with `CompleteWithoutEntry()`:
+
+```csharp
+public Task<ConfigFlowResult> SubmitAsync(string stepId,
+	IReadOnlyDictionary<string, object?> input,
+	IConfigFlowContext context,
+	CancellationToken cancellationToken)
+	=> Task.FromResult(ConfigFlowResult.CompleteWithoutEntry());
+```
+
+The result's `Kind` is `Complete` and `StoresEntry` is `false`. Macro Deck closes the dialog, discards the
+collected values, creates or changes no entry and does not initialize the integration again. A flow that
+edits an existing entry leaves that entry as it is. If the user switched the integration off and it has no
+usable entry, completing the flow removes that stored choice: going through setup counts as wanting the
+integration again. An integration with a usable entry the user switched off stays off.
+
+A Macro Deck that predates `CompleteWithoutEntry` treats it like `Complete` without a title: it stores an
+entry from the collected values under the integration's name, enables the integration and initializes it
+again. If such an entry would break your integration, refuse it in `PrepareEntryAsync` or report it as not
+usable with `IsEntryUsableAsync`.
+
+### Taking part in storing an entry
+
+A flow decides what an entry holds. To also decide whether it may be stored, report how each stored entry
+is doing, or apply a change without being initialized again, implement `IConfigEntryLifecycle` on the
+integration. Every member has a default, so override only what you need:
+
+```csharp
+public sealed class ServersIntegration : IPluginIntegration, IConfigFlowProvider, IConfigEntryLifecycle
+{
+	public Task<ConfigEntryPreparationResult> PrepareEntryAsync(ConfigEntryPreparation preparation,
+		CancellationToken cancellationToken = default)
+	{
+		var key = KeyFor(preparation.Title, preparation.Siblings);
+		if (key is null)
+		{
+			return Task.FromResult(ConfigEntryPreparationResult.Refuse(Strings.Setup.NameTaken()));
+		}
+
+		var values = new Dictionary<string, JsonElement>(preparation.Values)
+		{
+			["key"] = JsonSerializer.SerializeToElement(key)
+		};
+		return Task.FromResult(ConfigEntryPreparationResult.Accept(values,
+			[VariableDefinition.Eager($"server_{key}_status", VariableType.Text)]));
+	}
+
+	public Task<ConfigEntryStatus> GetEntryStatusAsync(StoredConfigEntry entry,
+		CancellationToken cancellationToken = default)
+		=> Task.FromResult(_connections.TryGetValue(entry.Id, out var connection) && connection.IsOpen
+			? ConfigEntryStatus.Connected
+			: ConfigEntryStatus.Disconnected);
+
+	public async Task<bool> ReloadEntriesAsync(CancellationToken cancellationToken = default)
+	{
+		await ReconnectChangedEntriesAsync(cancellationToken);
+		return true;
+	}
+
+	// Other members omitted.
+}
+```
+
+Macro Deck handles one change at a time per integration, in this order:
+
+1. **`PrepareEntryAsync`** sees the entry about to be stored: its id, title and values, the stored entry when
+   it is an edit, the other entries, and whether the title changed. Return the values to store, or refuse
+   with a message the user sees. `ReservedVariables` names the global variables the entry will create:
+   Macro Deck holds those names until the change ends and refuses the entry with its own message when
+   another integration's variable or another entry's preparation already has one. A variable your
+   integration already owns under the same id and type is not a conflict, so saving an entry again works.
+2. The entry is stored.
+3. **`ReloadEntriesAsync`** applies the change in the running integration. Return `true` when you did;
+   `false`, the default, makes Macro Deck shut the integration down and initialize it again.
+4. **`SynchronizeEntriesAsync`** receives every stored entry, for example to create the variables of a new
+   entry and delete those of a removed one.
+5. **`ReleasePreparationAsync`** ends the preparation, whether or not the entry was stored.
+
+#### Synchronizing while the integration is off
+
+Entries change while an integration is off too: the user can delete one, and an entry can be created before
+the integration was ever initialized. Override the overload that takes the integration's own `IVariableApi`
+and use it instead of `context.Variables`; it works whether or not the integration is initialized:
+
+```csharp
+public async Task SynchronizeEntriesAsync(IReadOnlyList<StoredConfigEntry> entries,
+	IVariableApi variables,
+	CancellationToken cancellationToken)
+{
+	var keys = entries.Select(KeyOf).OfType<string>().ToHashSet();
+	foreach (var variable in await variables.GetAllAsync())
+	{
+		if (EntryKeyOf(variable.DefinitionId) is { } key && !keys.Contains(key))
+		{
+			await variables.DeleteAsync(variable.Id);
+		}
+	}
+
+	foreach (var key in keys)
+	{
+		await variables.CreateAsync(VariableDefinition.Eager($"server_{key}_status", VariableType.Text));
+	}
+}
+```
+
+Macro Deck calls this overload; its default calls the overload without `variables`, so an integration written
+before it keeps working unchanged. A Macro Deck that predates the overload calls the one without `variables`.
+Out of process, `MacroDeck.Plugin.Hosting` passes the plugin's own variable api.
+
+#### Choosing another name when one is taken
+
+A name in `ReservedVariables` can be taken by a variable you cannot see from `Siblings`, such as a user
+variable. By default Macro Deck then refuses the entry with its own message. To pick another name instead,
+set `RetryOnConflict` on the result. Macro Deck then prepares the entry again, with every name it could not
+hold so far in `RejectedVariableNames`:
+
+```csharp
+var rejected = preparation.RejectedVariableNames.ToHashSet();
+var key = Candidates(preparation.Title)
+	.FirstOrDefault(candidate => !rejected.Contains($"server_{candidate}_status"));
+if (key is null)
+{
+	return Task.FromResult(ConfigEntryPreparationResult.Refuse(Strings.Setup.NoFreeName()));
+}
+
+return Task.FromResult(ConfigEntryPreparationResult.Accept(values,
+	[VariableDefinition.Eager($"server_{key}_status", VariableType.Text)]) with { RetryOnConflict = true });
+```
+
+`RejectedVariableNames` is empty on the first attempt and only grows within the same change, so the
+integration keeps no state of its own. Macro Deck stops after 32 attempts, or when an attempt adds no new
+rejected name, and refuses the entry with its own message. Refuse it yourself first when you run out of
+candidates, so the user sees your message. A Macro Deck that predates `RetryOnConflict` ignores it and
+refuses the entry on the first conflict.
+
+`GetEntryStatusAsync` is what the integration page shows next to each entry, and `IsEntryUsableAsync` says
+whether an entry can be used as it is. An integration whose flow is required is turned off when none of its
+entries is usable, and renaming an unusable entry stores the new title without running `PrepareEntryAsync`.
+A secret field of a `StoredConfigEntry` holds the reference to the encrypted value, not the value; read it
+with `GetSecretAsync`.
+
+A plugin that implements the interface declares the `config-entries` capability. A Macro Deck that predates
+it rejects the declaration and never calls these members, and a plugin that cannot be reached while an entry
+is stored gets the defaults: the entry is stored as the flow completed it and the integration is
+initialized again.
+
 ### Rendering the flow as a UI tree
 
 Implement `IUiConfigFlowProvider` on the integration and `IUiConfigFlow` on the flow to draw the flow as a
@@ -4737,6 +6267,13 @@ Its `describe` result carries `allowsMultipleConfigurations`, `servesConfigUiTre
 plaintext before `flow.submit`, and forwards OAuth state and `EntryTitle`. `PluginTestHarness.ConfigFlow`
 drives the same operations in tests - see [Testing](https://docs.macro-deck.app/features/testing/) and
 [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#capabilities).
+
+`IConfigEntryLifecycle` is the separate `config-entries` capability, driven by `prepare`, `status`,
+`usable`, `reload`, `synchronize` and `release`. The first integration of the plugin that implements it
+answers them. `prepare` carries the optional `rejectedVariableNames` and its result the optional
+`retryOnConflict`; a `Complete` result of `flow.submit` carries `withoutEntry: true` for
+`CompleteWithoutEntry()`. All three are left out when unused. `PluginTestHarness.ConfigEntries` drives the
+same operations in tests.
 
 ### See also
 
@@ -4941,6 +6478,75 @@ returns: Macro Deck's relay does that, and the harness has none. Use a fresh ses
 refusal is a failed outcome whose `details.reason` is a `video_stream_` reason. See
 [Video streams](https://docs.macro-deck.app/features/video-streams/#testing).
 
+### Testing batteries
+
+```csharp
+var batteries = new FakeBatteryProviderContext();
+await new HeadsetIntegration(watcher).InitializeAsync(batteries);
+
+Assert.That(batteries.Devices["pad-1"].LevelPercent, Is.EqualTo(80));
+```
+
+`FakeBatteryProviderContext` keeps the host's rules: publishing a known id replaces the device, a list is
+applied all or nothing, and a provider holds at most 64 devices. `Devices`, `Publishes` and `RemovedIds`
+record what your provider did. `FakeBatteryApi` is the reading side: `Set` replaces the catalog and raises
+`Changed`, and `SubscriberCount` shows whether your code still listens. In a harness,
+`harness.Context.Batteries` serves `IIntegrationContext.Batteries` and `harness.Context.BatteryProvider` is
+what `InitializeIntegrationsAsync` starts your battery provider against. See
+[Batteries](https://docs.macro-deck.app/features/batteries/#testing).
+
+### Testing weather notices
+
+```csharp
+await harness.InitializeIntegrationsAsync();
+
+Assert.That(harness.Context.WeatherProvider.SnapshotNotices, Is.EqualTo(1));
+```
+
+`FakeWeatherProviderApi` counts what a weather provider reports through
+`IIntegrationContext.WeatherProvider`; in a harness it is `harness.Context.WeatherProvider`. Over the wire,
+`MacroDeckTestHost` answers `weather`/`snapshots-changed` the way Macro Deck does, refusing it with
+`CAPABILITY_UNAVAILABLE` when the plugin's `weather` capability was not negotiated. See
+[Weather](https://docs.macro-deck.app/features/weather/#telling-macro-deck-the-weather-changed).
+
+### Testing Companion devices
+
+```csharp
+var companion = new FakeCompanionDeviceApi();
+var tablet = Guid.NewGuid();
+companion.Connect(tablet, new CompanionDeviceState { ConfirmsCommands = true });
+companion.OnRequest = (_, _) => CompanionDeviceCommandResult.Failed(CompanionDeviceFailure.ConsentDenied);
+
+await new TabletDimmer(companion).DimAsync(tablet);
+
+Assert.That(companion.Calls.Single().Kind, Is.EqualTo(FakeCompanionDeviceCallKind.Request));
+```
+
+`FakeCompanionDeviceApi` starts with access `Available` and no devices. `Connect`, `Report` and `Disconnect`
+script the devices and raise the matching events, each connection with a new `ReadySequence`; `SetAccess`
+changes access, and while it is `NotAllowed` requests and screenshots fail with `NotAllowed`. `OnRequest` and
+`OnScreenshot` decide how requests and screenshots end, and `Calls` records every send, request and
+screenshot. In a harness, `harness.Context.CompanionDevices` serves both `IIntegrationContext.CompanionDevices`
+and an injected `ICompanionDeviceApi`, starting at `Unsupported` until the test calls `SetAccess`. See
+[Companion devices](https://docs.macro-deck.app/features/companion-devices/#testing).
+
+### Testing music player readers
+
+`harness.Context.MusicPlayers` is a `FakeMusicPlayerApi` serving both `IIntegrationContext.MusicPlayers` and an
+injected `IMusicPlayerApi`. `Set(players)` replaces the players and raises `InstancesChanged`,
+`SetAlbumColor(instanceId, color)` sets what `GetAlbumColorAsync` answers, and `SubscriberCount` shows whether
+your code still listens. See
+[Reading every provider's players](https://docs.macro-deck.app/features/music-players/#reading-every-providers-players).
+
+### Storage, time format and User-Agent
+
+`harness.Context.Storage` is a `FakeIntegrationStorage` with Macro Deck's key rules and read outcomes:
+`Set` seeds a document, `SetUnreadable` makes a key hold damaged copies, and `Get` reads what your
+integration wrote - see [Integration storage](https://docs.macro-deck.app/features/integration-storage/#testing).
+`harness.Context.Locale.TimeOfDayFormat` sets the time format `IIntegrationContext.Locale` answers, by default
+the invariant culture with a 24-hour clock, and `harness.Context.Http.UserAgent` the User-Agent
+`IIntegrationContext.Http` and an injected `IHostHttp` report.
+
 ### Testing calendars
 
 ```csharp
@@ -4958,6 +6564,51 @@ being read is in each call's arguments, a record from `MacroDeck.Plugin.Protocol
 Results are what the host receives: `events` returns summaries without description and participants, with
 the reply limits applied, and an account id the plugin does not know is a failed outcome. See
 [Calendars](https://docs.macro-deck.app/features/calendars/#testing).
+
+### Testing email inboxes
+
+```csharp
+var outcome = await harness.EmailInbox.GetSnapshotAsync(new EmailInboxSnapshotArguments
+{
+	InboxId = inboxId, MaxMessages = 5, UnreadOnly = true
+});
+
+Assert.That(outcome.DataAs<EmailInboxSnapshotResult>()!.UnreadCount, Is.EqualTo(2));
+```
+
+`harness.EmailInbox`, an `EmailInboxTestClient`, drives the `email-inbox` capability the way the host does,
+with `DescribeAsync`, `GetInboxesAsync` and `GetSnapshotAsync`. The inbox being read is in the arguments, a
+record from `MacroDeck.Plugin.Protocol.Capabilities.EmailInbox`. Results are what the host receives: the
+status as a name, at most the requested number of messages, newest first, with the reply limits applied, and
+an inbox id the plugin does not know is a failed outcome. Raising `Changed` sends a `state.update` 250 ms
+later, on `harness.Clock` in the harness and in `host.Messages` over the wire. See
+[Email inboxes](https://docs.macro-deck.app/features/email-inboxes/#testing).
+
+### Testing configuration entries
+
+```csharp
+var outcome = await harness.ConfigEntries.PrepareAsync(new ConfigEntryPrepareArguments
+{
+	EntryId = Guid.NewGuid(), Title = "Home", Values = new Dictionary<string, JsonElement>()
+});
+
+Assert.That(outcome.DataAs<ConfigEntryPrepareResult>()!.Success, Is.True);
+```
+
+`harness.ConfigEntries`, a `ConfigEntriesTestClient`, drives the `config-entries` capability the way the host
+does while it stores an entry, with `PrepareAsync`, `GetStatusAsync`, `IsUsableAsync`, `ReloadAsync`,
+`SynchronizeAsync` and `ReleaseAsync`. Set `RejectedVariableNames` on the arguments to test a repeated
+`prepare`, and read `RetryOnConflict` from the result. `SynchronizeAsync` calls the `SynchronizeEntriesAsync`
+overload that takes a variable api, backed by `harness.Context.Variables`, also when the integration was never
+initialized. See
+[Taking part in storing an entry](https://docs.macro-deck.app/features/setup-flows/#taking-part-in-storing-an-entry).
+
+### Testing what a session shows on the pressing client
+
+Pass a `FakeUiEventOrigin` to your session's `Dispatch(UiEvent, IUiEventOrigin)` and read `ReportedFailures`
+and `OpenedModals`. Set `IsAttached = false` to test what happens once the client left, and `ModalAnswer` to
+answer a dialog. `MacroDeckTestHost` has no clients, so over the wire it answers an origin's calls as Macro
+Deck answers them for a client that is no longer attached.
 
 ### Testing previews
 
@@ -5007,7 +6658,7 @@ macrodeck-plugin test --project src/Demo
 ```
 
 ```text
-Macro Deck plugin conformance report (suite 1.2.0)
+Macro Deck plugin conformance report (suite 1.3.0)
 Plugin: com.example.demo 1.0.0
 Passed: 25, Failed: 0, Skipped: 24
 Conformant: yes
@@ -5235,13 +6886,71 @@ seek bar's maximum is the current track's length.
 ### Variables that depend on configuration
 
 `Variables` may change with configuration. After the configuration changed, tell the host to read it
-again with `CatalogChanged(CapabilityKinds.Variables)` on an injected `IPluginCatalogNotifier` - the
-[weather sample](https://docs.macro-deck.app/introduction/samples-and-template/) does this after its config flow.
+again with `context.Variables.NotifyDeclarationsChangedAsync()`. For a plugin this sends the same
+`state.update` for the `variables` kind that `CatalogChanged(CapabilityKinds.Variables)` on an injected
+`IPluginCatalogNotifier` sends, so it works with every Macro Deck version - the
+[weather sample](https://docs.macro-deck.app/introduction/samples-and-template/) does this after its config flow. It is about the
+declared eager set only; a catalog announces a changed set of resources with `InvalidateCatalogAsync`
+(see [Push instead of poll](#push-instead-of-poll)).
+
+### Reading again now
+
+Macro Deck reads each eager variable at its `RefreshInterval`. When something changed what `ReadAsync`
+would answer - a connection came up, a device reported new state - ask for every declared variable to be
+read on the next poll instead:
+
+```csharp
+await context.Variables.RequestRefreshAsync(cancellationToken);
+```
+
+Requests made while one is still on its way are merged into one, so calling it from every callback of an
+event stream is fine. It is best effort: it never throws because the request could not be delivered, and a
+Macro Deck that predates it treats it as a no-op, so the variables are still read at their interval.
+Pushed catalog resources are unaffected; publish those through the sink.
+
+When a change affects only a few variables, name them by definition id so the rest keep their cadence:
+
+```csharp
+await context.Variables.RequestDefinitionRefreshAsync(["volume-percent", "muted"], cancellationToken);
+```
+
+Ids you do not declare are ignored and an empty list asks for nothing. Reading more than asked for is always
+allowed: a pending request for every variable covers pending requests for some, and an `IVariableApi` that
+does not override the member, or a Macro Deck that predates it, reads every declared variable instead.
+
+### Names
+
+A canonical variable name matches `^[a-z][a-z0-9_]*$`. `VariableNames.IsValid` checks one, and
+`VariableNames.Sanitize` derives one from any text the way Macro Deck does: `vars.` is dropped, accents are
+removed, letters are lowercased, every other character becomes `_`, runs of `_` collapse, and a leading digit
+gets a `v_` prefix. The same text always gives the same name, so a name derived from a stable label stays
+stable:
+
+```csharp
+var name = VariableNames.Sanitize($"{machineName} fps"); // "gaming_pc_fps"
+```
 
 `DeclaredVariables` is what the host shows for an integration that is not configured yet. It defaults to
 `Variables`; override it only when `Variables` is empty until something is configured, and set
 `VariablesDependOnConfiguration` when its names contain a `VariableNameTemplate` placeholder for a
 per-instance segment.
+
+### History of your own variables
+
+```csharp
+await using var window = await context.Variables.OpenHistoryAsync("weather_berlin_temperature", 40, cancellationToken);
+window.Changed += (_, _) => Redraw(window.Values);
+```
+
+`OpenHistoryAsync` opens a rolling window on one of your own global numeric variables, for example to draw a
+graph in a widget. Macro Deck samples the variable once per second while a window on it is open, so the
+values are evenly spaced and the graph advances whether the value changes or not. `Values` holds at most the
+requested number of samples, oldest first, and is empty until the variable first reads as a number. The
+window may be opened before the variable exists. Dispose it when the graph is no longer shown.
+
+A name that belongs to someone else throws a `VariableHistoryException` with `NotOwned`, and too many open
+windows `LimitExceeded`. A Macro Deck that predates variable history, or an `IVariableApi` that does not
+implement it, throws `Unsupported`; catch it and draw without a graph.
 
 ### Testing
 
@@ -5261,6 +6970,11 @@ Assert.That(written!.Status, Is.EqualTo("Applied"));
 
 `GetAsync` and `SetAsync` take the local id, not the name. The
 [sample plugins](https://docs.macro-deck.app/introduction/samples-and-template/) test every variable they declare this way.
+
+`FakeIntegrationContext.Variables` counts `RequestRefreshAsync` and `NotifyDeclarationsChangedAsync` calls in
+`RefreshRequests` and `DeclarationChanges`, lists the ids of each `RequestDefinitionRefreshAsync` call in
+`DefinitionRefreshRequests`, and keeps what `BindAsync` recorded in `Bindings`. `RecordSample` adds a sample to every history window open on a
+name, and `OpenHistoryWindows` counts the windows that are not disposed yet.
 
 ### Templates
 
@@ -5405,15 +7119,48 @@ Push applies to the catalog only - eager variables are always polled.
 A resource that disappears keeps its binding and variable; it just reads as unavailable and resumes
 without re-binding once it can be resolved and read again.
 
+#### Recording bindings yourself
+
+The user binds catalog resources in the variables view. An integration can record bindings itself, for
+example to carry variables over from an older version that created them another way:
+
+```csharp
+var outcomes = await context.Variables.BindAsync(
+[
+	new VariableBindingRequest("entity/light.kitchen/state", "ha_light_kitchen", VariableType.Text)
+	{
+		MigratedFrom = "my-plugin/watched-entities-v1"
+	}
+], cancellationToken);
+```
+
+- The bindings always belong to the calling integration, and are recorded together or not at all.
+- A resource the integration already has a binding for answers `AlreadyBound` and keeps its binding, even
+  when the user renamed its variable since. Running the same migration twice is therefore safe.
+- Every name must satisfy `VariableNames.IsValid` and every resource id must be a valid resource id;
+  otherwise `ArgumentException` is thrown and nothing is recorded. A plugin sends at most 512 per call.
+- Recording does not create the variables right away. Macro Deck creates them when it restores bindings,
+  at the latest on its next start; a requested name another variable holds by then is replaced with one
+  derived from it, as for any binding.
+- `InvalidOperationException` means the bindings could not be stored. The default implementation, and a
+  Macro Deck that predates the member, throw `NotSupportedException`. Keep the data you migrate from until a
+  call succeeds, so the next start can try again.
+
 ### Over the plugin protocol
 
 Each **eager** variable is declared as one capability, like an action. Catalog ids are never declared -
-they travel in the operation arguments, which keeps a large catalog under `MaxDeclaredCapabilities`. See
+they travel in the operation arguments, which keeps a large catalog under `MaxDeclaredCapabilities`. A
+provider with only a catalog or only on-demand variables therefore declares nothing; Macro Deck asks it for
+`describe` when it connects and offers its variables from then on, so it needs no announcement. See
 [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#capabilities) for the
-`describe`/`get`/`set`/`discover`/`resolve`/`subscribe` operations and the `variable-values` host API.
+`describe`/`get`/`set`/`discover`/`resolve`/`subscribe` operations, the `variables`/`refresh` host operation
+behind `RequestRefreshAsync` and `RequestDefinitionRefreshAsync` (with an optional `definitionIds` list), the
+`variables`/`bind` operation behind `BindAsync`, the `variables`/`history.open`, `history.read` and `history.close` operations
+behind `OpenHistoryAsync` (a plugin's window reads its samples once per second and ends with the
+connection), and the `variable-values` host API.
 Declare `host:variable-values` in [`manifest.json`](https://docs.macro-deck.app/reference/manifest/) when you use it.
-`MacroDeckTestHost` drives all six operations; see [conformance](https://docs.macro-deck.app/reference/conformance/) for MDC0311, MDC0314
-and MDC0315.
+`MacroDeckTestHost` drives all six operations; see [conformance](https://docs.macro-deck.app/reference/conformance/) for MDC0311, MDC0314,
+MDC0315 and MDC0403, which also check a plugin whose variables come only from a catalog or on demand.
 
 ### Writing a user variable
 
@@ -6063,6 +7810,28 @@ Things to know:
 - **Instance ids are local** (`"rooftop"`). The host qualifies them as `integrationId::rooftop` and saves
   them in widgets, so keep them stable.
 
+### Pressing the widget
+
+A Weather widget without a flow of its own opens details when pressed, if the station it shows comes
+from a provider that names a details action. Declare one of your own actions as `DetailsAction`:
+
+```csharp
+public WeatherDetailsAction? DetailsAction { get; } = new("show-station", StationParameter: "station");
+```
+
+- The host resolves the station the widget shows: the station saved in the widget, or, when none is saved,
+  the same first station the widget draws. It then runs that station's provider's action on the pressing
+  client, with the station's qualified id (`integrationId::rooftop`) in `StationParameter`.
+- Leave `DetailsAction` at its default `null` and pressing the widget runs nothing until the user adds a
+  flow. The built-in Weather integration declares its **Weather details** action, which opens a dialog
+  for its own locations.
+- Only clients with a screen run it; a hardware deck does not. A flow the user added to the widget always
+  wins.
+- An action that shows a dialog opens it with `context.Ui.ShowModalAsync` and serves it from your own
+  [`IUiProvider`](https://docs.macro-deck.app/ui/views/modal/), as the built-in Weather integration does.
+- Out of process the action travels in the `weather` capability's `describe` result. A host older than
+  this member ignores it, and a plugin built against an older SDK declares no details action.
+
 ### Implementing the station
 
 ```csharp
@@ -6131,6 +7900,25 @@ internal sealed class RooftopStation(RooftopClient client) : IWeatherStation
 location name set. Start with it and keep the last good snapshot when a refresh fails, as the built-in
 Open-Meteo station does. A brief outage then doesn't blank the widget.
 
+### Telling Macro Deck the weather changed
+
+Macro Deck reads your stations about once a minute on its own. After a station fetched new data, tell it
+so, and Weather widgets show the new conditions at once instead of up to a minute later. If your
+integration also declares weather variables, ask for those to be read again at the same moment, so a
+widget whose states follow them never disagrees with the Weather widget.
+
+```csharp
+// at the end of each refresh, with the IIntegrationContext from InitializeAsync
+_ = context.WeatherProvider.NotifySnapshotsChangedAsync();
+_ = context.Variables.RequestRefreshAsync();
+```
+
+- `NotifySnapshotsChangedAsync` is best effort and never throws. Notices that arrive while one is pending
+  are merged into one read, so calling it once per refresh is enough.
+- It covers changed snapshots only. A changed list of stations is still a catalog change (see
+  [Over the plugin protocol](#over-the-plugin-protocol)).
+- A Macro Deck older than this member ignores the notice and keeps reading the stations once a minute.
+
 ### The snapshot
 
 ```csharp
@@ -6188,6 +7976,11 @@ read as an unavailable snapshot. The station list is a snapshot, so after your c
 removes a location, call `CatalogChanged(CapabilityKinds.Weather)` on an injected
 `IPluginCatalogNotifier`. The [weather sample](https://docs.macro-deck.app/introduction/samples-and-template/) does exactly this.
 See [Capability parity](https://docs.macro-deck.app/reference/capability-parity/).
+
+`context.WeatherProvider.NotifySnapshotsChangedAsync()` sends the `weather` host api's `snapshots-changed`
+operation (see [WebSocket protocol](https://docs.macro-deck.app/reference/websocket/#weather)). Macro Deck accepts it only from a
+plugin whose `weather` capability was negotiated and answers `CAPABILITY_UNAVAILABLE` otherwise; an older
+Macro Deck answers `CAPABILITY_UNSUPPORTED`. The SDK swallows both, so the call stays safe everywhere.
 
 ### See also
 
