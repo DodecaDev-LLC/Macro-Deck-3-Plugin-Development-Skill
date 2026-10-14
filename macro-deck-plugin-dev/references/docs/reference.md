@@ -942,6 +942,8 @@ A plugin implements the same SDK contracts as an in-process integration, but the
 | Battery providers | Yes | Differs | Same contract and limits. A plugin's devices are withdrawn when its session ends, a resumed reconnect resends them in one `sync` call, and on a host without battery support a publish is a logged no-op - see [Batteries in a plugin](https://docs.macro-deck.app/features/batteries/#in-a-plugin). |
 | Battery devices (`IIntegrationContext.Batteries`) | Yes | Differs | A plugin reads the last `batteries` push, so `Devices` is empty until the host has pushed once and `RemovedIds` can miss a removal made while it was disconnected; a built-in integration reads the live catalog - see [Reading devices](https://docs.macro-deck.app/features/batteries/#reading-devices). |
 | Companion devices (`ICompanionDeviceApi`) | Yes | Differs | The same devices, commands, screenshots and results. A built-in integration reads it from `IIntegrationContext.CompanionDevices` and always has access; a plugin also needs `host:companion-devices` and the user's consent, reads `Access` and `Devices` from the last `companion-devices` push, so `Access` is `Unsupported` and `Devices` empty until the host has pushed once, and is limited to 8 MiB per screenshot and four calls in flight - see [Companion devices](https://docs.macro-deck.app/features/companion-devices/). |
+| Companion device entries (`ICompanionDeviceConfigEntries`) | Yes | Differs | Declared as `companion-device-entries`. Entries are created only for one owner, and a built-in integration that asks for them, such as the built-in Companion integration, always comes before a plugin; a plugin owner gets them only while the plugin may use Companion devices; the entry is prepared through `config-entries` like any stored entry - see [A configuration entry per device](https://docs.macro-deck.app/features/companion-devices/#a-configuration-entry-per-device). |
+| Desktop notifications (`IIntegrationContext.DesktopNotifications`) | Yes | Differs | The same shell-first path to the operating system. A built-in integration always may show them; a plugin also needs `host:desktop-notifications` and reads `IsSupported` from the `desktop-notifications` push sent on registration, so it is `false`, and `ShowAsync` shows nothing, until that push arrives - see [Desktop notifications](https://docs.macro-deck.app/features/notifications/#desktop-notifications). |
 | Messaging (`IIntegrationContext.Messages`) | Yes | Same | Plugins and built-in integrations share one broker and one set of topics; a plugin's handlers are unreachable while it reconnects - see [Messaging between plugins](https://docs.macro-deck.app/features/messaging/). |
 | Host callbacks (`IIntegrationContext`) | Yes | Same | Host APIs cross the protocol or use pushed snapshots instead of object references - see [Host callbacks](#host-callbacks). |
 | Synchronous catalogs | Yes | Differs | Serve the last `describe` snapshot until `state.update` refreshes it. |
@@ -1631,15 +1633,17 @@ Recommended. Array of unique strings. Known vocabulary, one per host callback su
 
 | Group | Permissions |
 | --- | --- |
-| Host | `host:variables`, `host:user-variables`, `host:config`, `host:deck`, `host:scripts`, `host:widgets`, `host:notifications` (also covers interactive notifications), `host:action-interactions`, `host:devices`, `host:variable-values`, `host:layouts`, `host:folder-views`, `host:widget-types`, `host:event-bindings`, `host:screensavers`, `host:adb`, `host:messaging`, `host:video-streams`, `host:companion-devices` |
+| Host | `host:variables`, `host:user-variables`, `host:config`, `host:deck`, `host:scripts`, `host:widgets`, `host:notifications` (also covers interactive notifications), `host:action-interactions`, `host:devices`, `host:variable-values`, `host:layouts`, `host:folder-views`, `host:widget-types`, `host:event-bindings`, `host:screensavers`, `host:adb`, `host:messaging`, `host:video-streams`, `host:companion-devices`, `host:desktop-notifications` |
 | Other | `events:publish`, `assets:upload`, `net:outbound`, `fs:user-files`, `process:spawn`, `device:usb` |
 
 - Unknown permission: warning (`unknown-permission`), still installs. Not an enum on purpose.
 - Duplicate: rejected.
-- **Declared, validated, persisted and exposed.** The host enforces only `host:adb` and
-  `host:companion-devices`: an installed plugin that does not declare one cannot use the `adb` or the
-  `companion-devices` host API, see [Android devices](https://docs.macro-deck.app/features/android-devices/) and
-  [Companion devices](https://docs.macro-deck.app/features/companion-devices/). Every other permission is enforced nowhere. See
+- **Declared, validated, persisted and exposed.** The host enforces only `host:adb`,
+  `host:companion-devices` and `host:desktop-notifications`: an installed plugin that does not declare one
+  cannot use the `adb`, the `companion-devices` or the `desktop-notifications` host API, see
+  [Android devices](https://docs.macro-deck.app/features/android-devices/), [Companion devices](https://docs.macro-deck.app/features/companion-devices/) and
+  [Desktop notifications](https://docs.macro-deck.app/features/notifications/#desktop-notifications). Every other permission is
+  enforced nowhere. See
   [the security model](https://docs.macro-deck.app/policies/security/#permissions-declared-not-enforced).
 
 ### `languages`
@@ -2437,7 +2441,8 @@ are listed in the descriptor's `capabilityKinds`:
 `actions`, `events`, `variables`, `icons`, `config-flow`, `music-player`, `weather`,
 `virtual-profiles`, `issues`, `ui`, `localization`, `device-provider`, `layout-provider`,
 `folder-view-provider`, `migration`, `widget-type-provider`, `screensaver-provider`, `messaging`,
-`video-stream-provider`, `calendar`, `config-entries`, `battery-provider`, `email-inbox`.
+`video-stream-provider`, `calendar`, `config-entries`, `battery-provider`, `email-inbox`,
+`companion-device-entries`.
 
 - **Do not invent operation names inside an existing kind.** Additions to the operation vocabulary are
   compatibility-sensitive protocol changes. Exact operations and payloads are in the protocol package
@@ -2454,6 +2459,10 @@ are listed in the descriptor's `capabilityKinds`:
   answers an identity, not bytes; `icon.content` fetches the bytes only when that identity changes,
   uploaded over the `asset.*` pipeline, never inside the capability reply. The `widgets` host API's
   `invalidate-icon` asks the host to re-read an action sooner than its next poll.
+- `ActionDescriptorDto` gained the optional `role` (`IActionDefinition.Role`) and `VariableDefinitionDto`
+  the optional `isShareable` (`VariableDefinition.IsShareable`), additively in major `3` and within each
+  kind's capability version. An absent `role` means no role and an absent `isShareable` means `true`,
+  which is what a plugin built before them sends; an older host ignores both.
 - `calendar` was added as a new kind at capability version `1`, additively in major `3`. A host that
   predates it rejects the declaration non-fatally (`accepted: false`) and the session goes on without it.
   Its operations and reply limits are in the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#calendar).
@@ -2472,6 +2481,10 @@ are listed in the descriptor's `capabilityKinds`:
   `state.update` with a `localId` names an inbox, not a declared capability: that inbox's content or status
   changed, and the host reads its `snapshot` again instead of re-describing the kind. Its operations and
   reply limits are in the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#email-inbox).
+- `companion-device-entries` was added as a new kind at capability version `1`, additively in major `3`. It
+  is declarative: declaring it asks the host to keep one configuration entry of the plugin per Companion
+  device, and its only operation, `describe`, answers without data. A host that predates it rejects the
+  declaration non-fatally. See [Companion devices](https://docs.macro-deck.app/features/companion-devices/#a-configuration-entry-per-device).
 
 See [capabilities](https://docs.macro-deck.app/features/) and [Capability parity](https://docs.macro-deck.app/reference/capability-parity/).
 
@@ -2511,16 +2524,24 @@ host restarts; hosts that predate it omit both fields, which read as an empty li
 arrive out of order, so apply one only when its revision is higher than the last one applied in this
 session, always apply revision 0, and reset the last applied revision when a session is not resumed.
 
-The `adb` snapshot, pushed per plugin, follows the same revision rule. It is one of the two host APIs a
+The `adb` snapshot, pushed per plugin, follows the same revision rule. It is one of the three host APIs a
 plugin may be refused by its manifest: see [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#adb).
 
-The `companion-devices` host API (`wait`, `send`, `request`, `screenshot`) is the other, gated by
+The `companion-devices` host API (`wait`, `send`, `request`, `screenshot`) is another, gated by
 `host:companion-devices` and the user's consent, and was added additively in major `3` with its own per-plugin
 snapshot under the same revision rule. A host that predates it answers `CAPABILITY_UNSUPPORTED` and pushes
 nothing, which `MacroDeck.Plugin.Hosting` reports as access `Unsupported`, a send that answers `false` and a
 request or screenshot that fails as not connected; an older plugin ignores the push. See
 [`companion-devices`](https://docs.macro-deck.app/reference/websocket/#companion-devices) and
 [Companion devices](https://docs.macro-deck.app/features/companion-devices/).
+
+The `desktop-notifications` host API (`show`) is the third, gated by `host:desktop-notifications` alone, and
+was added additively in major `3` with a per-plugin push, sent on registration, of whether the plugin may
+show notifications from the operating system. A host that predates it answers `CAPABILITY_UNSUPPORTED` and
+pushes nothing, which `MacroDeck.Plugin.Hosting` reports as `IsSupported` `false` and a `ShowAsync` that
+shows nothing; an older plugin ignores the push. See
+[`desktop-notifications`](https://docs.macro-deck.app/reference/websocket/#desktop-notifications) and
+[Desktop notifications](https://docs.macro-deck.app/features/notifications/#desktop-notifications).
 
 The `music-players` host API (`album-color`) was added the same way, with a snapshot of every provider's
 players that every plugin receives under the same revision rule. It is not gated. A host that predates it
@@ -2581,9 +2602,11 @@ keyed by `code`; localise from the code. `details` is a string-to-string map, at
 | `ICON_PACK_SYNC_NOT_ALLOWED` | Only a self-registered development session can sync bundled icon packs. |
 | `ICON_NOT_FOUND` | No installed icon pack contains an icon with this id. |
 | `COMPANION_DEVICES_NOT_ALLOWED` | This plugin is not allowed to use Companion devices. |
+| `DESKTOP_NOTIFICATIONS_NOT_ALLOWED` | This plugin is not allowed to show desktop notifications. |
 
 The list is append-only within a major. The three `ADB_*` codes answer only the `adb` host API, and
-`COMPANION_DEVICES_NOT_ALLOWED` only the `companion-devices` host API; see
+`COMPANION_DEVICES_NOT_ALLOWED` only the `companion-devices` host API, and
+`DESKTOP_NOTIFICATIONS_NOT_ALLOWED` only the `desktop-notifications` host API; see
 [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#adb). A `reason` in `details` refines a deliberately generic
 code, for example `developer_mode_disabled`, `host_locked`, one of the `adb_` reasons of `ADB_FAILED`, or
 one of the `video_stream_` reasons of `CAPABILITY_UNAVAILABLE` (see
@@ -3177,7 +3200,7 @@ Capabilities are first declared on the `POST /api/plugins/sessions` request; `ca
 
 | Shape | Field | Type | Required | Meaning |
 | --- | --- | --- | --- | --- |
-| `DeclaredCapability` | `kind` | string | yes | One of the twenty-three kinds below. |
+| `DeclaredCapability` | `kind` | string | yes | One of the twenty-four kinds below. |
 | | `localId` | string | yes | The capability's id within the plugin. |
 | | `versionRange` | `{minimum, maximum}` | yes | Integer capability versions the plugin serves. |
 | | `displayName` | string | no | Human-readable name. |
@@ -3190,7 +3213,7 @@ Negotiation fails **non-fatally**: an unsupported or unknown kind comes back rej
 
 One kind is used without being negotiated: when a session declared no `variables` capability, the host still sends `variables`/`describe` while it registers the plugin (with a 5 second deadline), because a provider with only a catalog or only on-demand variables has nothing to declare. When the answer carries variables or a catalog, the session uses `variables` from then on. A plugin without the capability answers `CAPABILITY_UNSUPPORTED`, as for any kind it does not implement. A `variables` capability that was declared and rejected stays unused.
 
-The twenty-three `kind` values: `actions`, `events`, `variables`, `icons`, `config-flow`, `music-player`, `weather`, `virtual-profiles`, `issues`, `ui`, `localization`, `device-provider`, `layout-provider`, `folder-view-provider`, `migration`, `widget-type-provider`, `screensaver-provider`, `messaging`, `video-stream-provider`, `calendar`, `config-entries`, `battery-provider`, `email-inbox`. `operation` comes from a fixed vocabulary per kind - see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). Two more captured invokes:
+The twenty-four `kind` values: `actions`, `events`, `variables`, `icons`, `config-flow`, `music-player`, `weather`, `virtual-profiles`, `issues`, `ui`, `localization`, `device-provider`, `layout-provider`, `folder-view-provider`, `migration`, `widget-type-provider`, `screensaver-provider`, `messaging`, `video-stream-provider`, `calendar`, `config-entries`, `battery-provider`, `email-inbox`, `companion-device-entries`. `operation` comes from a fixed vocabulary per kind - see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). Two more captured invokes:
 
 ```json
 {"type":"capability.invoke","id":"01a09528-bc57-7b85-bed4-952327ffedcd",
@@ -3302,7 +3325,7 @@ A failed or timed-out invoke counts as the default: the entry is stored as the f
 | `host.cancel` | plugin → host | `reason` - best-effort cancellation of a `host.invoke` |
 | `host.state` | host → plugin | `api` (required), `data` - the list a plugin's synchronous members serve from |
 
-APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `notifications`, `action-interactions`, `ui`, `devices`, `variable-values`, `layouts`, `folder-views`, `widget-types`, `screensavers`, `adb`, `messaging`, `icon-packs`, `video-streams`, `colors`, `batteries`, `weather`, `locale`, `companion-devices`, `music-players`, and the push-only `event-bindings` and `http`. There is no `events` api; use `event.publish`. A plugin ignores a `host.state` api it does not know.
+APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `notifications`, `action-interactions`, `ui`, `devices`, `variable-values`, `layouts`, `folder-views`, `widget-types`, `screensavers`, `adb`, `messaging`, `icon-packs`, `video-streams`, `colors`, `batteries`, `weather`, `locale`, `companion-devices`, `music-players`, `desktop-notifications`, and the push-only `event-bindings` and `http`. There is no `events` api; use `event.publish`. A plugin ignores a `host.state` api it does not know.
 
 `host.state` for `config` has no `data`: it means "your config changed, re-read it". Built from the schema:
 
@@ -3328,6 +3351,7 @@ APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `no
 | `weather` | Needs the `weather` capability kind - see [`weather`](#weather). |
 | `locale` | `time-of-day-format` takes no arguments and answers `culture`, the culture name of the Macro Deck interface, and `hourCycle`, `h12` or `h23`: the user's time format setting, or the operating system's when it follows the system. A plugin maps a culture it cannot load or an hour cycle it does not know to its current culture and `h23`. A host without the api answers `CAPABILITY_UNSUPPORTED`. See [Formatting a time of day](https://docs.macro-deck.app/features/localization/#formatting-a-time-of-day). |
 | `companion-devices` | Gated per plugin, runs off the session's dispatch loop, at most 4 calls in flight per plugin - see [`companion-devices`](#companion-devices). |
+| `desktop-notifications` | Gated per plugin by `host:desktop-notifications`, runs off the session's dispatch loop, at most 4 calls in flight per plugin - see [`desktop-notifications`](#desktop-notifications). |
 | `music-players` | Not gated: every plugin reads every provider's players. `album-color` runs off the session's dispatch loop and shares the limit of 4 artwork lookups in flight per plugin - see [`music-players`](#music-players). |
 | `http` | Push-only `host.state`, no `host.invoke` operations. `data` carries `userAgent`, the User-Agent the user configured or the host's default, sent on registration and whenever the user changes it. See [Outgoing HTTP requests](https://docs.macro-deck.app/reference/plugin-hosting/#outgoing-http-requests). |
 
@@ -3806,6 +3830,43 @@ is simply absent. A value the device does not report is absent; percentages are 
 follows the same rule as the `deck` push: apply a push only when its revision is higher than the last one
 applied in this session. A host without this api never pushes it and answers every `companion-devices`
 invoke with `CAPABILITY_UNSUPPORTED`.
+
+##### `desktop-notifications`
+
+```json
+{"type":"host.invoke","id":"<uuid-v7>","deadlineMs":30000,
+ "payload":{"api":"desktop-notifications","operation":"show",
+   "arguments":{"title":"Build finished","message":"All green"}}}
+```
+
+Shows a notification from the operating system of the computer Macro Deck runs on, attributed to Macro Deck.
+Shapes are in
+[`DesktopNotificationsDtos.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/protocol/src/MacroDeck.Plugin.Protocol/Callbacks/DesktopNotificationsDtos.cs).
+The SDK side is [Desktop notifications](https://docs.macro-deck.app/features/notifications/#desktop-notifications).
+
+| Operation | Arguments | Result `data` |
+| --- | --- | --- |
+| `show` | `title`, `message` | none, once the host handed the notification to the operating system |
+
+- **Access is per plugin.** An installed plugin needs `host:desktop-notifications` in its manifest; a
+  self-registered session counts as declaring it. Without it a call is refused with
+  `DESKTOP_NOTIFICATIONS_NOT_ALLOWED`. There is no separate user setting.
+- **Best effort.** A computer without desktop notifications shows nothing and still answers; the operating
+  system may also hide a notification, and the host reports nothing about it. Missing arguments are
+  `INVALID_PAYLOAD`.
+- **At most 4 calls in flight per plugin.** A fifth is refused at once with a retryable `RATE_LIMITED`.
+  Calls also count toward the per-plugin callback throttle.
+
+The `desktop-notifications` `host.state` push is per plugin and sent on registration, as
+`DesktopNotificationsStateDto`:
+
+```json
+{"type":"host.state","id":"<uuid-v7>","payload":{"api":"desktop-notifications","data":{"supported":true}}}
+```
+
+`supported` is `true` when the plugin may show desktop notifications and the computer offers them. A host
+without this api never pushes it and answers every `desktop-notifications` invoke with
+`CAPABILITY_UNSUPPORTED`; the .NET SDK then reports `IsSupported` as `false` and does not call it.
 
 ##### `music-players`
 

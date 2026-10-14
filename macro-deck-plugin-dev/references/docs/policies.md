@@ -30,7 +30,7 @@ under [behaviour changes that moved no version](https://docs.macro-deck.app/ui/r
 | UI model | `MacroDeck.Ui`, `MacroDeck.Ui.Model`, `MacroDeck.Ui.Testing` | Frozen like the SDK; the UI model's wire major is negotiated separately - see [the UI model majors](#ui-model-majors). |
 | Protocol | `MacroDeck.Plugin.Protocol`: the envelope, DTOs, message types, error codes | Append-only within a protocol major; a break needs a new major. |
 | Plugin HTTP and WebSocket | `/api/plugins/*`, `/plugins/ws` | Existing endpoints keep their shape and meaning - see [the protocol reference](https://docs.macro-deck.app/reference/protocol/). |
-| Capability and host API catalogues | `device-provider`/`devices`, `layout-provider`/`layouts`, `folder-view-provider`/`folder-views`, `widget-type-provider`/`widget-types`, `screensaver-provider`/`screensavers`, `messaging`/`messaging`, `video-stream-provider`/`video-streams`, `calendar`, `config-entries`, `battery-provider`/`batteries`, `email-inbox`, `locale`, `companion-devices`, `music-players`, `event-bindings`, `http` | Names stay; see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). |
+| Capability and host API catalogues | `device-provider`/`devices`, `layout-provider`/`layouts`, `folder-view-provider`/`folder-views`, `widget-type-provider`/`widget-types`, `screensaver-provider`/`screensavers`, `messaging`/`messaging`, `video-stream-provider`/`video-streams`, `calendar`, `config-entries`, `battery-provider`/`batteries`, `email-inbox`, `companion-device-entries`, `locale`, `companion-devices`, `music-players`, `desktop-notifications`, `event-bindings`, `http` | Names stay; see [capability operations](https://docs.macro-deck.app/reference/protocol/#capability-operations). |
 | Manifest and package format | `manifest.json`, the `.macroDeckPlugin` package | An existing manifest and package keep installing - see [the manifest reference](https://docs.macro-deck.app/reference/manifest/). |
 | Analyzer diagnostic ids | `MDP1001`, …, the `MDLOC` family `MDLOC001`-`MDLOC008` | An id keeps its meaning and is never reused - see [analyzers](https://docs.macro-deck.app/reference/analyzers/). |
 | Conformance check ids | `MDC0305`, … | Stable, so you can gate CI on them - see [conformance](https://docs.macro-deck.app/reference/conformance/). |
@@ -334,6 +334,17 @@ What did **not** need a major:
   implementation keeps compiling and loading and reports no players. An older host pushes nothing and answers
   `CAPABILITY_UNSUPPORTED`, which the SDK reports as no players and a `null` colour, without throwing; an
   older plugin ignores the push. Reading is not gated, like registering another player's artwork.
+- [Desktop notifications](https://docs.macro-deck.app/features/notifications/#desktop-notifications) added
+  `IIntegrationContext.DesktopNotifications`, the `MacroDeck.Sdk.Notifications` types `IDesktopNotifier` and
+  `UnsupportedDesktopNotifier`, the `desktop-notifications` host API (`show`) with a per-plugin `host.state`
+  push on registration, the error code `DESKTOP_NOTIFICATIONS_NOT_ALLOWED`, the permission
+  `host:desktop-notifications`, and `FakeDesktopNotifier` in `MacroDeck.Plugin.Testing`, all within major `3`.
+  `DesktopNotifications` is a default interface member returning `UnsupportedDesktopNotifier.Instance`, so an
+  existing `IIntegrationContext` implementation keeps compiling and loading and shows nothing. An older host
+  pushes nothing and answers `CAPABILITY_UNSUPPORTED`; the SDK then reports `IsSupported` as `false` and
+  `ShowAsync` completes without showing anything, without throwing. An older plugin ignores the push, and an
+  older host installs a manifest that declares `host:desktop-notifications` with the `unknown-permission`
+  warning. The permission is enforced from the start, which breaks no plugin because none used the API before.
 - Colour variables added `VariableType.Color`, whose values travel as an ordinary `text` value, and an
   optional `allowAlpha` field on `ActionParameterDto` (`ActionParameter.AllowAlpha`), all within major `3`.
 - [Batteries](https://docs.macro-deck.app/features/batteries/) added a capability kind, `battery-provider`, at capability version
@@ -363,6 +374,22 @@ What did **not** need a major:
   optional `searchable` field on `ActionParameterDto`, all within major `3`. An older host ignores it and
   draws the plain select; a parameter from an older plugin has no `searchable` and is not searchable. See
   [Letting the user search a long list](https://docs.macro-deck.app/features/actions/#letting-the-user-search-a-long-list).
+- Action roles added `IActionDefinition.Role`, a default interface member returning `null`, the
+  `ActionRoles` constants and an optional `role` field on `ActionDescriptorDto`, all within major `3` and
+  `actions` capability version `1`. An existing `IActionDefinition` keeps compiling and loading with no
+  role; an older host ignores the field. `ActionRoles.RunScript` and `ActionRoles.RunRemoteScript` were
+  added the same way; an older host's editor offers script inputs only for its own built-in script actions. See [Declaring parameters](https://docs.macro-deck.app/features/actions/#declaring-parameters).
+- [Companion device entries](https://docs.macro-deck.app/features/companion-devices/#a-configuration-entry-per-device) added the
+  member-less `ICompanionDeviceConfigEntries` interface and a declarative capability kind,
+  `companion-device-entries`, at capability version `1` with the single operation `describe`, answered
+  without data, all within major `3`. A plugin that does not implement the interface never declares the kind
+  and is unaffected; an older host rejects the declaration non-fatally and creates no entries for the plugin.
+  The built-in Companion integration now reaches the same behaviour through the interface instead of being
+  named by host code, so its entries are created and removed exactly as before.
+- Shareability added `VariableDefinition.IsShareable` (default `true`) and an optional `isShareable` field
+  on `VariableDefinitionDto`, defaulting to `true` when absent, all within major `3` and without moving the
+  `variables` capability version: a definition from an older plugin stays shareable, and an older host
+  ignores the field. See [Defining a variable](https://docs.macro-deck.app/features/variables/#defining-a-variable).
 - Localization moved the **UI model** major, not this one - see [the localization major](#the-localization-major).
 
 **Negotiation happens exactly once**, in `POST /api/plugins/sessions`:
@@ -840,7 +867,7 @@ or shipped but not implemented, is stated as such.
 | --- | --- | --- |
 | Host | Everything: it owns state, credentials, secrets and install decisions | - |
 | Desktop app, over the private loopback port | **Admin**, with a per-launch secret instead of a token | A process running as the same user can read that secret - see [loopback trust](#loopback-trust-needs-a-per-launch-secret) |
-| Plugin process | Scope `plugin`: the plugin protocol surface, and nothing else | Not sandboxed: it runs with the user's full privileges. Declared permissions are [not enforced](#permissions-declared-not-enforced), except `host:adb` and `host:companion-devices` |
+| Plugin process | Scope `plugin`: the plugin protocol surface, and nothing else | Not sandboxed: it runs with the user's full privileges. Declared permissions are [not enforced](#permissions-declared-not-enforced), except `host:adb`, `host:companion-devices` and `host:desktop-notifications` |
 | Deck clients (web client, companion) | Scope `client`: the viewer-safe endpoints | Plugin endpoints refuse them |
 | LAN callers and browsers | The public listener's API and web client | Every plugin endpoint refuses them |
 | Creator Portal and Store | Signing Store plugins after checking the publishing workflow's provenance; publishing the signed registry and its revoked keys | Revocation refuses new installs and updates, not a plugin that is already installed |
@@ -1149,7 +1176,7 @@ digest, and every declared file's hash and size. See [`sign`](https://docs.macro
 
 <a id="permissions-declared-not-enforced"></a>
 
-### Permissions: declared, and enforced only for ADB and Companion devices
+### Permissions: declared, and enforced only for ADB, Companion devices and desktop notifications
 
 ```json
 { "permissions": ["host:variables", "host:adb"] }
@@ -1159,12 +1186,13 @@ A manifest may declare permissions from a fixed vocabulary (`host:variables` thr
 mirroring the host callback surface one for one. They are parsed, shape-validated, persisted and surfaced
 through the installed-plugins API so a consent surface has something real to render.
 
-**The host gates exactly two host APIs on a declared permission: `adb`, on `host:adb`, and
-`companion-devices`, on `host:companion-devices`.** Every other host callback is served whether or not the calling plugin declared the permission that covers it. Plugins that
+**The host gates exactly three host APIs on a declared permission: `adb`, on `host:adb`,
+`companion-devices`, on `host:companion-devices`, and `desktop-notifications`, on
+`host:desktop-notifications`.** Every other host callback is served whether or not the calling plugin declared the permission that covers it. Plugins that
 predate the vocabulary declare nothing, so a default-deny posture for the rest would break every plugin
 already running, and a default-allow posture would not be a boundary worth the name.
 
-Both are enforced because they were new: no existing plugin relied on them. A plugin reaches Macro Deck's
+All three are enforced because they were new: no existing plugin relied on them. A plugin reaches Macro Deck's
 ADB connection only when ADB is enabled, the user has left **Allow plugins to use ADB** on, and the active
 version of the installed plugin declares `host:adb`. Installing a plugin that declares it while ADB or
 that setting is off asks the user whether to turn both on. A self-registered session, admitted through a
@@ -1202,6 +1230,16 @@ that declares the permission, and Macro Deck's own integrations are not subject 
 control rather than isolation: the plugin process itself stays unsandboxed. See
 [Companion devices](https://docs.macro-deck.app/features/companion-devices/) and
 [ADR 0110](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0110-plugins-reach-companion-devices-through-a-permission-gated-host-api.md).
+
+<a id="desktop-notifications"></a>
+
+**Desktop notifications need only the declaration.** A plugin shows a notification from the operating
+system, attributed to Macro Deck, only when the active version of the installed plugin declares
+`host:desktop-notifications`; a self-registered session counts as declaring it. There is no separate
+setting: such a notification carries only the text the plugin chose, and the operating system's own
+notification settings for Macro Deck still apply. A plugin could show its own notifications without Macro
+Deck, so this too is user control rather than isolation. See
+[Desktop notifications](https://docs.macro-deck.app/features/notifications/#desktop-notifications).
 
 Treat the other declared permissions as documentation of intent, not as a constraint on what a plugin can
 reach.
@@ -1297,7 +1335,7 @@ Read this before deciding what a plugin should be trusted with.
 | Limitation | Detail |
 | --- | --- |
 | A plugin runs with the user's full privileges | A managed plugin is an ordinary child process: no sandbox, container, separate account or privilege reduction. It can do anything the user can - read and write their files, open network connections, start processes. Installing one is equivalent to running any other downloaded program |
-| Permissions are not a boundary | A plugin that declares nothing can still reach every host API except `adb` and `companion-devices`, and even these gate only Macro Deck's own connections, not a plugin's own - see [above](#permissions-declared-not-enforced) |
+| Permissions are not a boundary | A plugin that declares nothing can still reach every host API except `adb`, `companion-devices` and `desktop-notifications`, and even these gate only Macro Deck's own connections and notifications, not a plugin's own - see [above](#permissions-declared-not-enforced) |
 | An unsigned plugin is still admitted on your say-so | See [signing](#signing-the-creator-portal-signs-and-the-host-verifies-before-install-and-before-every-load). For an unsigned install the declared-digest check is corruption detection, not a boundary: whoever can rewrite the binary can rewrite the unsigned manifest. Trust rests on where you got the file |
 | Revocation stops new installs only | A plugin installed before its certificate or issuer was revoked keeps running; the Store marks it, and removing it is your decision |
 | A process running as the same user can become admin | It can read the desktop app's loopback secret. The model defends against LAN callers, browsers and other local accounts, not a hostile process running as the same user |

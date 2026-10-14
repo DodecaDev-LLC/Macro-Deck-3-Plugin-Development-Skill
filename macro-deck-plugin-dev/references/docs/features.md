@@ -283,6 +283,19 @@ and **is still sent to the executor** - never infer anything from a field being 
 Set `Platforms` on the definition only when the capability does not exist on other platforms at all
 (hibernation on macOS); the action is then neither listed nor executable there.
 
+`Role` names a job the action does for Macro Deck itself, one of the `ActionRoles` values, and is `null`
+for an ordinary action. A role fixes the parameters: `ActionRoles.LaunchApplication` takes a required
+`path` and an optional `arguments`. When the user drops an application onto the deck, Macro Deck binds the
+new button to a built-in action with that role; a plugin's action with the role is never chosen, so a
+plugin never receives the dropped path. A Macro Deck release from before `Role` ignores it.
+
+`ActionRoles.RunScript` and `ActionRoles.RunRemoteScript` mark an action that runs a Macro Deck script, here
+or on another instance. Such an action takes a required dynamic-choice `scriptId`; an option may carry the
+metadata `scriptInputs` (the script's inputs as a JSON array) and `runsOnWidget` (`"true"`). The action
+editor then adds an `input:<name>` parameter per declared input and, for `RunScript` only, a `widget`
+target for a widget script. `RunRemoteScript` also takes an optional dynamic-choice `instance`, sent along
+when the editor lists the scripts. Any action with one of these roles, a plugin's included, gets this editor.
+
 #### Letting the user search a long list
 
 A `Choice` or `DynamicChoice` parameter draws a plain select. For a long list, call `AsSearchable()` on it
@@ -2216,6 +2229,41 @@ screenshots above, its variables read each device's `State`, and its **device re
 from `DeviceReady`, once per `ReadySequence`. See
 [`CompanionIntegration.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/host/src/MacroDeckHost.Integrations/Companion/CompanionIntegration.cs).
 
+### A configuration entry per device
+
+An integration whose configuration is per device can ask Macro Deck to keep one configuration entry for
+each Companion device by implementing the member-less `ICompanionDeviceConfigEntries` next to its config
+flow:
+
+```csharp
+public sealed class TabletIntegration : IPluginIntegration, IConfigFlowProvider, ICompanionDeviceConfigEntries
+{
+	// IPluginIntegration and IConfigFlowProvider members omitted.
+}
+```
+
+What Macro Deck does with it:
+
+- **Creates the entry when a device connects.** When a device running the Companion app connects and has no
+  usable entry yet, Macro Deck stores one with the device id as its id, the device's name as its title and
+  empty values. Storing it switches the integration on, as any stored entry does, unless the user switched
+  the integration off; a switch-off made while the entry is being created is kept.
+- **Deletes it when the device is removed** from Macro Deck, without recording that as a switch-off.
+- **One owner.** Only one integration gets these entries: the first integration built into Macro Deck that
+  implements the interface, or, when there is none, the first plugin that does, in the order they register.
+  Macro Deck keeps that choice in memory for as long as it runs and makes it again on every start. While the
+  built-in Companion integration is present a plugin never gets them. When the owner is switched off, no
+  entry is created for anyone.
+- **Your plugin needs access.** A plugin owner also needs `Access` to be `Available` (see
+  [Who decides](#who-decides)); without it no entry is created, and entries follow once the user allows it.
+- **Prepared like any entry.** If your plugin also implements `IConfigEntryLifecycle`, Macro Deck asks it to
+  prepare the entry first, exactly as for an entry the user completes. A refusal leaves the device without an
+  entry, and Macro Deck tries again with the device's next report.
+
+On the wire, implementing the interface declares the `companion-device-entries` capability. It is
+declarative: its only operation, `describe`, answers without data. A Macro Deck that predates it rejects the
+declaration non-fatally and creates no entries for your plugin.
+
 ### Older hosts
 
 On a Macro Deck that predates this API, `Access` stays `Unsupported`, `Devices` stays empty, no event is
@@ -2272,6 +2320,7 @@ device's own user to agree on the device. See
 | --- | --- | --- |
 | Plugin to host | `companion-devices` host API | `wait` (a device that just connected), `send` (fire and forget), `request` (wait for the answer), `screenshot` (the PNG follows over `host.asset.*` with kind `companion-screenshot`) |
 | Host to plugin | `host.state` for `companion-devices`, per plugin | `access` (`available` or `not-allowed`), the devices when available, and a revision |
+| Plugin to host | `companion-device-entries` capability, declared by `ICompanionDeviceConfigEntries` | `describe`, answered without data |
 
 A call while the plugin's access is not `available` is refused with `COMPANION_DEVICES_NOT_ALLOWED`. See
 [`companion-devices` in the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#companion-devices).
@@ -5389,6 +5438,16 @@ app, the web client and the Companion app. `IIntegrationContext.NotificationServ
 it. The older `IIntegrationContext.Notifications` (`IUserNotifier`) still works and only adds an entry to the
 notification list.
 
+A message for the person at the computer itself, shown by the operating system as a Windows toast, a macOS
+notification or a Linux desktop notification, goes through `IIntegrationContext.DesktopNotifications`
+instead; see [Desktop notifications](#desktop-notifications).
+
+| To | Use |
+| --- | --- |
+| Show a toast or dialog on the Macro Deck clients, or ask and wait for an answer | `NotificationService` (`INotificationService`) |
+| Leave an entry in Macro Deck's notification list | `NotificationService` with `Inbox`, or the older `Notifications` (`IUserNotifier`) |
+| Show a notification from the computer's operating system | `DesktopNotifications` (`IDesktopNotifier`) |
+
 ### Example
 
 ```csharp
@@ -5555,6 +5614,38 @@ by the request deadline. How the notification ended arrives later as a `ui` / `n
 kept and sent when it reattaches. A host that predates these operations answers `CAPABILITY_UNSUPPORTED`, which
 the SDK reports as `NotificationErrorCode.Unsupported`; a plugin written before them keeps working
 unchanged. See the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/).
+
+### Desktop notifications
+
+```csharp
+if (_context.DesktopNotifications.IsSupported)
+{
+    await _context.DesktopNotifications.ShowAsync(MyStrings.RecordingStopped(), MyStrings.SavedTo(path), cancellationToken);
+}
+```
+
+`IDesktopNotifier.ShowAsync` hands a title and a message to the operating system of the computer Macro Deck
+runs on. Macro Deck shows it through its own app first, so the notification carries Macro Deck's name and
+icon, and falls back to the operating system's own tool when the app is not running. The System integration's
+**Send notification** action uses the same path.
+
+- **Best effort.** The call never throws because a notification could not be shown: while `IsSupported` is
+  `false`, or when Macro Deck refuses or fails, it completes without showing anything. The operating system
+  can still hide it, for example under a focus mode, and nothing is reported back. Only cancellation throws.
+- **`IsSupported`** is `false` on a computer without desktop notifications, such as Linux without
+  `notify-send`, and for a plugin that may not show them.
+- **Plugins declare `host:desktop-notifications`.** An installed plugin without it cannot show desktop
+  notifications; a session registered with a developer token or pairing counts as declaring it. An
+  integration built into Macro Deck always may. See [the manifest](https://docs.macro-deck.app/reference/manifest/) and
+  [the security model](https://docs.macro-deck.app/policies/security/#desktop-notifications).
+- **Older Macro Deck versions.** A plugin learns `IsSupported` when it registers. Macro Deck before
+  desktop notifications reports nothing, so `IsSupported` stays `false` and `ShowAsync` shows nothing. An
+  `IIntegrationContext` implemented against an older SDK inherits the same behaviour from
+  `UnsupportedDesktopNotifier`.
+
+On the wire this is the [`desktop-notifications`](https://docs.macro-deck.app/reference/websocket/#desktop-notifications) host API. In
+`MacroDeck.Plugin.Testing`, `FakeIntegrationContext.DesktopNotifications` is a `FakeDesktopNotifier` that
+records what it showed in `Shown`; set `IsSupported` to `false` to test the other case.
 
 ### Testing
 
@@ -6748,6 +6839,7 @@ anything else with `with { ... }`.
 | `Write` | Makes the variable writable - see [Writable variables](#writable-variables). | `new VariableWriteCapability()` |
 | `Attributes` | Free-form strings, readable as `vars.x.<key>`. Not interpreted by the host. | `new Dictionary<string, string> { ["room"] = "office" }` |
 | `Configuration` | Groups the variable under one configured instance (two OBS connections). | `new VariableConfiguration(entryId, "Studio PC")` |
+| `IsShareable` | `false` keeps the variable on this Macro Deck: the user cannot share it with other Macro Decks, and one shared earlier is no longer served. Defaults to `true`. | `false` for a variable that mirrors another Macro Deck |
 
 `SemanticKind` tells the host how to render a number; `Unit` is what it shows next to it:
 
