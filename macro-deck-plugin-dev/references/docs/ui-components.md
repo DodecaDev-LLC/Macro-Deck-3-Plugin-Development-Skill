@@ -181,7 +181,7 @@ tile.
 | `Padding` (`padding`) | length | No padding | Inner padding on every edge. |
 | `Background` (`background`) | `#rrggbb` or `transparent` | The reader's own accent colour | The button's face - unlike a stack, a button always has one. `transparent` asks for no face at all, and on the widget's root also removes the tile face behind it. |
 | `Source` (`source`) | resource | None | Artwork drawn across the whole box behind the children. |
-| `Transition` (`transition`) | `crossfade` | The new artwork replaces the old | How a change of `Source` is drawn. |
+| `Transition` (`transition`) | `crossfade` | The new artwork replaces the old without a fade | How a change of `Source` is drawn. |
 | `Fit` (`fit`) | `contain`, `cover` | `contain` | How the artwork fills the box. |
 | `Zoom` (`zoom`) | `0.1..4` | `1` | Scales the artwork about its own centre. |
 | `OffsetX` (`offsetX`) | `-1..1` | `0` | Shifts the artwork across by a fraction of the element's width, after `Zoom`. |
@@ -237,6 +237,10 @@ box among its children. On its parent's main axis a button follows the ordinary 
 - **Press feedback is local and immediate:** tint the whole element white at `0.2` alpha, fade in over
   `20 ms`, out over `140 ms`, visible at least `60 ms`. Never wait for the producer before painting.
 - **Paint order:** `background`, artwork, children, press feedback, ring.
+- **Framing belongs to its artwork:** without a `transition`, a new `source` that arrives together with new
+  `fit`, `zoom`, `offsetX`, `offsetY`, `opacity`, `brightness`, `saturation` or `tint` values keeps the outgoing
+  artwork drawn with its own values until the incoming artwork can be drawn, then switches the artwork and its
+  values in the same frame. A new value for an unchanged `source` applies at once.
 - **Transparent face:** a `background` of `transparent` paints nothing instead of the accent colour. On a
   button that is the widget's root, draw the tile without its face fill and shadow too. Any other value
   that is not `#rrggbb` still falls back to the accent colour, and a modifier's `background` stays
@@ -1068,7 +1072,7 @@ A plugin registers its own images with `IIntegrationContext.UiResources`; see
 Transition = UiComponentImageTransitions.Crossfade,
 ```
 
-Without `Transition`, a new `Source` simply replaces the old image.
+Without `Transition`, a new `Source` replaces the old image without a fade, as soon as it can be drawn.
 
 ### Dimming artwork
 
@@ -1110,7 +1114,7 @@ should not take up space either.
 |---|---|---|---|
 | `Source` (`source`) | `UiResource` handle | Nothing is drawn | The resource to draw. |
 | `Size` (`size`) | `UiSize` length | Left to the reader | The edge of the square box the image is fitted into, preserving aspect ratio and never cropped. |
-| `Transition` (`transition`) | `UiComponentImageTransitions`: `crossfade` | The new image replaces the old at once | How a change of `Source` is drawn. |
+| `Transition` (`transition`) | `UiComponentImageTransitions`: `crossfade` | The new image replaces the old without a fade | How a change of `Source` is drawn. |
 | `Opacity` (`opacity`) | `0..1` | Fully opaque | How opaque the image is drawn. |
 | `Brightness` (`brightness`) | `0..2` | `1` | A multiplier of the image's own luminance. |
 | `Saturation` (`saturation`) | `0..2` | `1` | A multiplier of the image's own saturation; `0` is greyscale. |
@@ -1141,6 +1145,9 @@ An image is `size` on both axes, fitted into a square box. Along its parent stac
   220 ms on an ease-out curve, from fully transparent at scale 1.02 about its centre to fully opaque at
   scale 1.
 - Artwork that fails to decode replaces the outgoing artwork at once, with no fade.
+- Without `crossfade`, a new `source` that arrives together with new `opacity`, `brightness`, `saturation` or
+  `tint` values keeps the outgoing image drawn with its own values until the incoming image can be drawn, then
+  switches the image and its values in the same frame. A new value for an unchanged `source` applies at once.
 - `brightness` is normative: multiply each channel by the value, before `saturation` and before
   compositing at `opacity`, and clamp each channel rather than wrapping it.
 - `saturation` is normative: `out = luma + saturation * (channel - luma)`, with
@@ -3270,9 +3277,15 @@ These are `macrodeck.*` types because a reader cannot draw them from the tree al
   `dynamic-text`'s `value` accepts only a time reference - never a progress reference.
 - Separator, digit system, writing direction and day-period position come from the reader's language.
   `time`'s hour cycle follows the user's app-wide preference as supplied by the host, falling back to the
-  reader's language; the pinned `time-*` formats ignore it.
+  reader's language, and so does the hour's leading zero: the host states whether the user's time format
+  writes one, by the same rule it writes its own times with, so every reader draws the same `08:05` or
+  `8:05` whatever its own locale data says. A 12-hour clock has none; a 24-hour clock has the one the
+  language's own pattern writes, and two digits in a language that writes 12 hours. The pinned `time-*`
+  formats ignore both.
 - Every `time*` format draws seconds, with the separator before them, at `0.55` of the run's `size` in
-  the `muted` role - even when `color` is set.
+  the `muted` role - even when `color` is set, and also when the run states no `size` and takes the
+  inherited one. A fitted run is fitted with its seconds at that ratio, so a clock that fits is never
+  cut off.
 - Digits are drawn with equal advance width, so the run does not shift as it counts.
 - `zone-name` is the last segment of the IANA id with underscores replaced by spaces; `zone-offset` is
   `UTC±hh:mm` at that instant. Both are empty with no zone.

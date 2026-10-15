@@ -316,10 +316,15 @@ For a configuration view, see [Letting the user search a long list](https://docs
 | --- | --- |
 | `Parameters` | Configured values, keyed by parameter name. |
 | `CancellationToken` | Cancelled when the flow is aborted. |
-| `OwnerWidgetId` | The widget whose flow is running; `null` for scripts, automations and other widget-less runs. |
+| `OwnerWidgetId` | The widget whose flow is running, also inside a script that runs on a widget; `null` for automations, other scripts and other widget-less runs. |
+| `ScriptId` | The script whose flow is running; for a nested **Run Script**, the called script. `null` outside a script, and on a host that predates it. |
+| `AutomationId` | The automation whose flow is running; `null` outside one, inside a script it started, and on a host that predates it. |
 | `OriginClientId` | The client that pressed, or `null` for a backend-initiated run. |
 | `Interactions`, `Ui` | Ask the originating client a question or open a [modal](https://docs.macro-deck.app/ui/views/modal/). `null` when nobody is there to ask - handle it. |
 | `CallDepth` | Script hops this run is nested behind. Pass it on, incremented, when handing work to another Macro Deck. |
+
+To write the user's variables as this step sees them, script and automation locals included, pass
+`UserVariableContext.From(context)`; see [Scopes](https://docs.macro-deck.app/features/variables/#scopes).
 
 ### Options that depend on provider state
 
@@ -3318,7 +3323,7 @@ table of its own:
 ```csharp
 using MacroDeck.Sdk.Input;
 
-KeyCode key = NativeKeys.FromWindows(virtualKey, scanCode, isExtended); // or FromMacOS(code), FromLinux(code)
+KeyCode key = NativeKeys.FromWindows(virtualKey, scanCode, isExtended); // or FromMacOs(code), FromLinux(code)
 
 if (KeyNames.TryGetModifier(key, out var modifier))
 {
@@ -3346,10 +3351,10 @@ as different modifiers, so a trigger bound as `Ctrl` does not fire for `RightCtr
 | Platform | Method | Notes |
 | --- | --- | --- |
 | Windows | `NativeKeys.FromWindows(virtualKey, scanCode, isExtended)` | Pass the extended flag: it tells `NumpadEnter` from `Enter` and a navigation key from the numpad key that reports the same virtual key while NumLock is off. The scan code (without the extended prefix) names a punctuation key's position exactly. The overload without it reads the foreground window's layout instead. |
-| macOS | `NativeKeys.FromMacOS(keyCode)` | Letters are resolved through the active input source, so key code 6 is `Y` on German. A letter position whose key types no Latin letter (Cyrillic) keeps its US letter. Key code 10 is `IntlBackslash` and 50 is `Backquote`, as Safari and the combo editor report them; on ISO Apple keyboards those two are swapped relative to the key's position. Function keys above `F20`, the Fn key and media keys have no key code and return `None`. |
+| macOS | `NativeKeys.FromMacOs(keyCode)` | Letters are resolved through the active input source, so key code 6 is `Y` on German. A letter position whose key types no Latin letter (Cyrillic) keeps its US letter. Key code 10 is `IntlBackslash` and 50 is `Backquote`, as Safari and the combo editor report them; on ISO Apple keyboards those two are swapped relative to the key's position. Function keys above `F20`, the Fn key and media keys have no key code and return `None`. |
 | Linux | `NativeKeys.FromLinux(evdevCode)` | An evdev code is a position, so letters follow US positions on every layout: the Z-labeled key of a German layout is `Y`. |
 
-`FromMacOS` reads the input source with the Text Input Sources API, which Apple documents for the main thread. It
+`FromMacOs` reads the input source with the Text Input Sources API, which Apple documents for the main thread. It
 has been exercised from a thread-pool thread, not from an event tap callback.
 
 To send a key the other way, from a `KeyCode` to the native code a synthetic key event needs, the letter,
@@ -3366,7 +3371,7 @@ if (NativeKeys.IsPositional(key) && NativeKeys.TryGetWindowsScanCode(key, out va
 | --- | --- |
 | `NativeKeys.IsPositional(key)` | `true` for the punctuation keys, which type a different character on each layout and are best sent by position |
 | `NativeKeys.TryGetWindowsScanCode(key, out scan)` | The PC set-1 scan code; Linux evdev numbers these keys the same way |
-| `NativeKeys.TryGetMacOSKeyCode(key, out code)` | The `kVK_*` key code, with WebKit's ISO naming (`IntlBackslash` 10, `Backquote` 50) |
+| `NativeKeys.TryGetMacOsKeyCode(key, out code)` | The `kVK_*` key code, with WebKit's ISO naming (`IntlBackslash` 10, `Backquote` 50) |
 | `NativeKeys.TryFromWindowsScanCode(scan, out key)` | The key at a scan code's US position, the inverse of `TryGetWindowsScanCode` |
 
 Each `TryGet` method returns `false` for keys outside that block (function, navigation, media and modifier
@@ -4255,8 +4260,10 @@ var text = Strings.Issues.ResumesAt(time: format.Format(TimeOnly.FromDateTime(re
 `TimeOfDayFormat` (`MacroDeck.Sdk.Locale`) carries the `Culture` of the Macro Deck interface and the
 `HourCycle`, `HourCycles.H12` or `HourCycles.H23`: the user's 12-hour or 24-hour setting, or the operating
 system's when the setting follows the system. `Format` writes the culture's short time pattern in that hour
-cycle; a 12-hour clock in a culture without AM/PM designators is written as `h:mm tt` in the invariant
-culture.
+cycle. A 24-hour clock in a culture whose pattern is 12-hour, such as English or Korean, has a two-digit hour
+(`09:05`), the way those languages write a 24-hour clock; a 24-hour pattern keeps its own (`09:05` in German,
+`9:05` in Spanish). A 12-hour clock never pads the hour, and in a culture without AM/PM designators it is
+written as `h:mm tt` in the invariant culture.
 
 A plugin's call crosses as `locale`/`time-of-day-format`. A Macro Deck that predates it, and a context that
 does not implement `Locale`, answer the process's current culture with a 24-hour clock. In tests, set
@@ -7272,6 +7279,50 @@ against an older one gets the same `NotEditable` it already handles for read-onl
 variable that renders a template is read-only the same way: every operation answers `NotEditable`, and
 its value changes only when a variable its template reads changes. `CreateAsync` always creates a
 variable that holds its own value.
+
+#### Scopes
+
+A user variable is global, or local to one widget, one script or one automation. A local variable
+shadows a variable of the same name further out. A running flow resolves a name in this order:
+
+| The flow runs in | Order |
+| --- | --- |
+| A widget | The widget's locals, then globals |
+| A script | Its inputs, then the script's locals, then, for a script that runs on a widget, that widget's locals, then globals |
+| An automation | The automation's locals, then globals |
+
+A script started by **Run Script** resolves only along its own chain, never the caller's. Script inputs
+are read-only: an operation on one is refused.
+
+From an action, write in the context of the step that is running so script and automation locals are
+found too. `UserVariableContext.From` copies the step's `OwnerWidgetId`, `ScriptId` and `AutomationId`
+(see [What the executor gets](https://docs.macro-deck.app/features/actions/#what-the-executor-gets)). Here `_userVariables` is
+the `IIntegrationContext.UserVariables` the integration kept from `InitializeAsync`:
+
+```csharp
+var variables = UserVariableContext.From(context);
+var result = await _userVariables.ApplyInContextAsync(
+	"count", variables, UserVariableOperation.Add, "1", context.CancellationToken);
+if (result.Status == UserVariableWriteStatus.NotFound)
+{
+	await _userVariables.CreateInContextAsync(
+		"count", variables, VariableType.Numeric, "1", cancellationToken: context.CancellationToken);
+}
+```
+
+- `ApplyInContextAsync` resolves the name along the order above and otherwise behaves like `ApplyAsync`.
+- `CreateInContextAsync` creates the variable in the most local scope the context names: the script,
+  else the automation, else the owner widget, else global. It refuses a script that does not exist with
+  `UnknownScript` and an automation that does not exist with `UnknownAutomation`.
+- Both are default interface members. An `IUserVariableApi` implementation that predates them, and a host
+  that predates script and automation variables, use only `OwnerWidgetId`: the call behaves like
+  `ApplyAsync` or `CreateAsync` with the owner widget, so the plugin keeps working with widget and global
+  variables. `ApplyAsync` and `CreateAsync` keep that behaviour on every host.
+- Over the protocol, the context travels as the optional `scriptId` and `automationId` fields of the
+  `user-variables` `apply` and `create` arguments, next to `ownerWidgetId`.
+- In `MacroDeck.Plugin.Testing`, `ActionsTestClient.ExecuteWithContextAsync` runs a step inside a script or
+  automation, and `FakeUserVariableApi` resolves script and automation locals and keeps the last context it
+  was called with in `LastContext`.
 
 ## Video streams
 
