@@ -8,6 +8,7 @@ Search everything: `grep -rn "<Type or term>" references/`.
 
 | File | Page | What it covers | Live URL |
 | --- | --- | --- | --- |
+| `docs/introduction.md` | Agent skills | Official skills that let coding agents such as Claude Code, Codex, OpenCode and GitHub Copilot create, change, test and prepare Macro Deck plugins for the Store. | https://docs.macro-deck.app/introduction/agent-skills/ |
 | `docs/introduction.md` | Your first action | Add an action with a parameter to the template plugin, trigger it, and show its state on the button. | https://docs.macro-deck.app/introduction/first-action/ |
 | `docs/introduction.md` | Project setup | Every file of a Macro Deck plugin project, written by hand - the project file, manifest, entrypoint, integration and build recipe - and how to run it. | https://docs.macro-deck.app/introduction/manual-setup/ |
 | `docs/introduction.md` | Quickstart | Create, run and package your first Macro Deck plugin in about five minutes, without Macro Deck installed. | https://docs.macro-deck.app/introduction/quickstart/ |
