@@ -250,6 +250,17 @@ What did **not** need a major:
   `IUiSession.Dispatch(UiEvent, IUiEventOrigin)` overload whose default forwards to `Dispatch(UiEvent)`, so a
   session compiled before it keeps receiving every event. The `ui` host API gained `origin.report-failure`
   and `origin.show-modal`; against an older host they answer `false` or a cancellation.
+- `IUiEventOrigin` gained `OpenUrlAsync` as a default interface member that checks the URL and answers
+  `false`, so an origin implemented before it keeps compiling and loading. The `ui` host API gained
+  `origin.open-url`; against an older host, and on a client that did not declare it can open links, it
+  answers `false`. A client declares that ability when it connects, in a form an older host ignores.
+- [Reporting values from an action's configuration](https://docs.macro-deck.app/ui/views/configuration/#reporting-values-the-tree-edits)
+  added `IActionConfigurationSession`, `ActionConfigurationSession` and
+  `ActionParameterValuesReportedEventArgs`. A configuration session written before them is unchanged and
+  never reports. The `ui` host API gained `report-parameter-values`, which an older host answers with
+  `CAPABILITY_UNSUPPORTED` and the SDK then drops, so a reported value is not saved there. The `ui`
+  capability gained `session.flush`, which a plugin built before it answers with `CAPABILITY_UNSUPPORTED`
+  and the host treats as flushed.
 - `IVariableApi` gained `RequestRefreshAsync` and `NotifyDeclarationsChangedAsync`, both defaulting to a
   no-op, and the `variables` host API gained `refresh`; an older host makes the request a no-op.
   `NotifyDeclarationsChangedAsync` uses the existing `state.update`.
@@ -259,6 +270,13 @@ What did **not** need a major:
   `NotSupportedException`, and the `variables` host API gained `bind`; against an older host the SDK
   reports the bindings as not supported. Two limits were added: `maxVariableRefreshDefinitionIds` and
   `maxVariableBindingsPerCall`.
+- `RequestDefinitionRefreshAsync` and `variables`/`refresh` with `definitionIds` also bring catalog resources
+  a user bound forward, not only declared variables, when Macro Deck polls them; a pushed resource is
+  unaffected. Reading more than asked for was always allowed. An older host ignores a catalog resource id,
+  so that resource keeps its refresh interval.
+  `MacroDeck.Plugin.Hosting` keeps the named ids when it merges a pending request with a request for every
+  declared variable and sends them next to it, split into lists of at most `maxVariableRefreshDefinitionIds`;
+  an earlier version folded them into the request for every declared variable.
 - `VariableNames` (`MacroDeck.Sdk.Variables`), `HostOptionsSources` (`MacroDeck.Sdk.Actions`) and the
   `NativeKeys` members `IsPositional`, `TryGetWindowsScanCode`, `TryGetMacOsKeyCode` and
   `TryFromWindowsScanCode` are new SDK helpers. They need no host support: the option source ids are the
@@ -1310,6 +1328,34 @@ A tree can name any provider's stream in a [`macrodeck.video-stream`](https://do
 any plugin's view can make the clients that draw it open sessions on another plugin's provider. That is no
 wider than what a signed-in client can already open, but it means a stream's audience is everyone who can
 see any Macro Deck view, not only the views its own plugin draws.
+
+### Links opened on a client
+
+A view that a user pressed can ask Macro Deck to open a web page in the browser of the device that pressed,
+through [`IUiEventOrigin.OpenUrlAsync`](https://docs.macro-deck.app/ui/views/sessions/#opening-a-link-on-the-client-that-pressed) or the
+`ui`/`origin.open-url` call. Every plugin and integration that serves a view can do this, and no permission
+covers it. Opening a page on someone's phone is visible and can be abused, so the call is narrow:
+
+- **Web pages only.** Macro Deck accepts only an absolute `http` or `https` URL, and checks it again before
+  sending it; the web client checks it a third time before it reaches the browser. A `javascript:`, `data:`,
+  `file:` or custom-scheme link is refused, so a plugin cannot run script in a client's page or hand a
+  device's operating system a file or an app link.
+- **Only in answer to a press, on the device that pressed.** The link goes only to the connection that sent an
+  event to that session in the last 10 seconds and is still attached to it, never to another tab or device
+  that shares its client id and never to a client that is merely showing the view. A plugin cannot open
+  pages on a deck nobody is touching.
+- **Only on clients that can.** A client must declare that it opens links when it connects. Hardware decks
+  and older clients never receive one.
+- **One link per press.** Each event lets the view open one page; a second call for the same press is
+  refused. Calls from a plugin also count against its callback throttle like any other call that puts
+  something on a user's screen.
+- **No way back.** The web client opens the page in a new tab without a reference to the deck's page, and
+  the deck's page sends no `Referer`, so the opened site learns neither the address of Macro Deck on the
+  local network nor anything else about the deck. When the browser blocks the new tab, the web client shows
+  the link to tap instead of opening it.
+
+The desktop UI runs on the computer Macro Deck runs on, so a press there opens the page in that computer's
+browser. What the page itself does is up to the site, as with any link the user follows.
 
 ### Battery devices
 

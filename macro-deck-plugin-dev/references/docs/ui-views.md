@@ -286,6 +286,43 @@ stored values, keyed by parameter name. `Secret` and `Password` parameters arriv
 (`UiConfigSurfaceAttributes.MaskedSecretValue`, `"$masked"`), because opening a configuration surface is
 not an intent to reveal a secret. You get the real value the ordinary way, when the user submits.
 
+#### Reporting values the tree edits
+
+Macro Deck saves what the tree's top-level inputs report as `change` events, keyed by their ids. A value
+the tree builds itself - nested fields, a list of rows, a value computed from several inputs - has no
+top-level input to report it. Wrap the session in an `ActionConfigurationSession` and report the
+parameter yourself:
+
+```csharp
+public Task<IUiSession?> CreateConfigurationSessionAsync(ActionConfigurationRequest request,
+    CancellationToken cancellationToken)
+{
+    var rows = new UiState<IReadOnlyList<Row>>(ReadRows(request));
+    ActionConfigurationSession? session = null;
+
+    var root = BuildEditor(rows, onEdited: () =>
+        session!.Report("rows", JsonSerializer.SerializeToElement(ToStoredMap(rows.Value))));
+
+    session = new ActionConfigurationSession(new ViewSession(new UiView(request.Session.Surface, root)));
+    return Task.FromResult<IUiSession?>(session);
+}
+```
+
+- **A report is a user edit of that parameter.** The value goes into the action being edited exactly as if
+  the user had typed it into the parameter list, and like any edit it is saved only when the user saves.
+- **Only declared parameters.** A name that is not in `Parameters`, a `Secret` or `Password` parameter, and
+  a value whose JSON shape does not fit the parameter type (a `KeyValue` must be an object of strings, an
+  `Array` an array) are dropped - by the host and again by the client.
+- **Report from the event handler.** Before it saves, the desktop app waits until every event it already
+  sent has been handled and every value reported while handling it has arrived. That covers a report
+  raised synchronously inside `Dispatch`. A report raised after awaited work, a lookup or a timer, can
+  arrive after the user saved and is then lost until the next edit.
+- **Older hosts and clients ignore reports.** The session still works as a plain session there: the tree
+  shows and edits, but a value only reported is not saved. Keep a top-level input, or the declared
+  parameter list, as the way to set anything that must be saved everywhere.
+- `IActionConfigurationSession` is the interface behind the wrapper, for a session that raises
+  `ParameterValuesReported` itself.
+
 ### Letting the user search a long list
 
 A choice draws a plain select. When its list is long, a few dozen counters, scenes or devices, set
@@ -405,6 +442,43 @@ new UiStatus
 
 A renderer that predates `status` declines it like any unknown type and draws the `Fallback`, so give it one
 built from a `UiProse` and the same button where the line matters.
+
+### Styled text and cards
+
+`UiProse` can carry `Spans`, the same [text spans](https://docs.macro-deck.app/ui/components/text/#mixing-text-and-images) a `ui.text` draws,
+in place of its plain `Text`, and a `Variant` that sets the paragraph as a block: `quote`, `code-block`,
+`heading-1`, `heading-2`, `heading-3` or `subtext`. A paragraph with spans or a variant keeps the line
+breaks in its text. Keep `Text` the plain equivalent of the spans: a renderer that does not know `spans`
+draws `Text`, and one that does not know a variant draws a plain paragraph. An image span in prose is
+drawn as its `Alt` text.
+
+A `UiConfigStack` with an `Accent` colour (`#rrggbb`) is drawn as a card: a leading bar in that colour on
+a fixed dark surface with light text, the same in the light and the dark theme, so text styled for that
+surface keeps its contrast. A renderer that does not know `accent` draws a plain stack.
+
+```csharp
+new UiConfigStack
+{
+    Key = "preview",
+    Accent = "#5865f2",
+    Children =
+    [
+        new UiProse
+        {
+            Key = "message",
+            Text = "Build finished\nnpm ci",
+            Spans = UiValue.Of<IReadOnlyList<UiTextSpan>>(
+            [
+                UiTextSpan.FromText("Build ", weight: UiComponentTextWeights.Bold),
+                UiTextSpan.FromText("finished") with { Italic = true },
+                UiTextSpan.FromText("\n"),
+                UiTextSpan.FromText("npm ci") with { Monospace = true, Background = "#1e1f22" },
+            ]),
+        },
+        new UiProse { Key = "footer", Text = "Sent by Macro Deck", Variant = "subtext" },
+    ],
+}
+```
 
 ### Asking before a button acts
 
@@ -1152,6 +1226,12 @@ Unlike an action's modal, nothing bounds the wait but your `cancellationToken`, 
 staying attached: a client that leaves the view or disconnects ends it as a cancellation. Pass a token that
 ends with the work the dialog belongs to.
 
+A dialog is also the fallback for a link. `origin.OpenUrlAsync(url)` opens a web page in the browser of the
+device that pressed, but answers `false` on a client that cannot open links, such as a hardware deck or an
+older client, on a Macro Deck that predates it, and once the press is more than a few seconds old. Show the
+address in a dialog then, as selectable text, so the user can still reach it; see
+[Opening a link on the client that pressed](https://docs.macro-deck.app/ui/views/sessions/#opening-a-link-on-the-client-that-pressed).
+
 ### How a dialog is sized
 
 Lengths are fractions of the box Macro Deck hands the dialog - see [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/). The box
@@ -1482,6 +1562,7 @@ client (`ClientId`) and acts on it:
 | `ReportFailureAsync(message)` | A failure, shown the way a failed action is shown, for example as a toast. |
 | `ShowModalAsync(modal)` | One of your provider's `dialog` views, opened as a [modal](https://docs.macro-deck.app/ui/views/modal/); returns once it is open. |
 | `ShowModalAsync<T>(modal)` | The same, waiting for the user's answer. |
+| `OpenUrlAsync(url)` | An `http` or `https` page opened in the browser of the device that pressed, for example the phone running the web client. Never the computer Macro Deck runs on, unless that is where the press came from. |
 
 An origin stays usable after your handler returned, so work that finishes later - a request to a device or
 a server - can still report its failure on the client that pressed. It acts only while that client is still
@@ -1520,10 +1601,49 @@ public sealed class ViewSession : IUiSession
 Capture the origin into a local before the first `await`, as `ToggleAsync` does: the field holds the
 origin of the latest event, which may be a different client's by the time the work resumes.
 
+#### Opening a link on the client that pressed
+
+`OpenUrlAsync` is narrower than the other members, because it puts a page in front of someone:
+
+- It accepts only an absolute `http` or `https` URL and throws `ArgumentException` for anything else, such
+  as `javascript:`, `file:` or a relative path.
+- It reaches only the connection the event came from, not every tab or device that shares its client id.
+- That connection must have told Macro Deck it can open links. The web client and the desktop UI do;
+  hardware decks, older clients and clients that cannot open a browser do not.
+- It works only for a short time after the event, about 10 seconds, so answer the press with it rather
+  than keep it for later work.
+- One event opens one link. A second call for the same press answers `false`. Calls from a plugin also
+  count against its callback throttle.
+
+It answers `true` when the link was handed to the client. That does not prove a page opened: a browser may
+still block the new tab, in which case the web client offers the link to tap. It answers `false` when any
+of the conditions above does not hold, and a Macro Deck or client that predates it always answers `false`.
+Show the link some other way then, for example in one of your dialogs:
+
+```csharp
+private async Task OpenArticleAsync(IUiEventOrigin origin, Uri link)
+{
+    if (!await origin.OpenUrlAsync(link))
+    {
+        await origin.ShowModalAsync(new ModalDefinition
+        {
+            ViewId = "article",
+            Data = new Dictionary<string, JsonElement>
+            {
+                ["url"] = JsonSerializer.SerializeToElement(link.AbsoluteUri)
+            }
+        });
+    }
+}
+```
+
+An `IUiEventOrigin` implemented before `OpenUrlAsync` existed keeps compiling: the default member checks
+the URL the same way and answers `false`.
+
 A plugin talking to a Macro Deck that predates origins still receives every event through this overload;
 its origins answer `false` or a cancellation. In tests, pass a `FakeUiEventOrigin` from
-`MacroDeck.Plugin.Testing` to `Dispatch` and read what the session showed from `ReportedFailures` and
-`OpenedModals`.
+`MacroDeck.Plugin.Testing` to `Dispatch` and read what the session showed from `ReportedFailures`,
+`OpenedModals` and `OpenedUrls`.
 
 ### While Macro Deck is locked
 
@@ -1597,14 +1717,31 @@ Like the other provider-shaped capabilities, `ui` declares the single local id `
 | `session.open` (developer preview) | A `developer-preview` surface names one registered scenario in its surface attributes. `MacroDeck.Plugin.Hosting` builds that scenario and never consults `IUiProvider`, so a production provider is unreachable from a preview. |
 | `session.snapshot` | Produce the current full tree. The tree does not return on the result - it arrives as a separate `host.invoke ui/snapshot`, so a first attach and a resync share one delivery path. A provider may also send `ui/snapshot` unasked to replace its whole tree, at any revision; later patches continue from that tree's revision. |
 | `session.event` | A client acted on a node. `clientId` says which one, and is meaningful only for a shared session. `MacroDeck.Plugin.Hosting` hands it to your session as the event's origin. A `pointer-move` still waiting to be sent is replaced by a newer one for the same node from the same client, and one the plugin could not take because it was busy or slow is dropped; see [Pointer streams and taps](https://docs.macro-deck.app/ui/components/modifier/#pointer-streams-and-taps). |
+| `session.flush` | Answer once every `session.event` sent for the session before it has been handled, and every `ui/report-parameter-values` those events raised has been answered. The host sends it when a client is about to save an action. A plugin built before it answers `CAPABILITY_UNSUPPORTED`, which the host treats as flushed: such a plugin never reports values. |
 | `session.close` | The host is ending this session. |
 | `modal.result` | How a modal this plugin opened ended. Host-to-plugin because a person, not a timeout, bounds the wait - see [Modal views](https://docs.macro-deck.app/ui/views/modal/). |
 
 Trees, patches and faults travel the other way through the [`ui` host api](https://docs.macro-deck.app/reference/websocket/#host-callbacks),
-and so do an origin's calls: `origin.report-failure` and `origin.show-modal` name the session and the
-`clientId` the event carried. The host acts on them only for a session the plugin serves and a client still
-attached to it, and answers `delivered: false` or `opened: false` otherwise. A host that predates them
-answers `CAPABILITY_UNSUPPORTED`, which the SDK turns into `false` or a cancellation.
+and so do an origin's calls: `origin.report-failure`, `origin.show-modal` and `origin.open-url` name the
+session and the `clientId` the event carried. The host acts on them only for a session the plugin serves and
+a client still attached to it, and answers `delivered: false` or `opened: false` otherwise; `origin.open-url`
+also needs the conditions in [Opening a link on the client that pressed](#opening-a-link-on-the-client-that-pressed)
+and answers `INVALID_PAYLOAD` for a URL that is not `http` or `https`. A host that predates them answers
+`CAPABILITY_UNSUPPORTED`, which the SDK turns into `false` or a cancellation.
+
+An action configuration session that reports parameter values (see
+[From an action](https://docs.macro-deck.app/ui/views/configuration/#reporting-values-the-tree-edits)) sends them as
+`ui/report-parameter-values`. `MacroDeck.Plugin.Hosting` sends each report from the session's own queue,
+in order, and waits for its answer before it handles the next queued item, which is what lets
+`session.flush` promise that the host already has them. A host that predates the operation answers
+`CAPABILITY_UNSUPPORTED`; the SDK then drops reports for the rest of the connection and logs it once.
+
+On the client side, a session's reported values reach the attached client as
+`UiSessionParameterValuesReportedEvent` (`sessionId`, `values`). A client asks with
+`FlushUiSession` (`sessionId`, `flushId`), which is answered at once, and receives
+`UiSessionFlushedEvent` (`sessionId`, `flushId`) on that connection alone once the session's provider has
+handled every event the client sent before, after every value those events reported. A host that predates
+flushing refuses the request as an unknown type, so a client treats that as flushed.
 
 ### See also
 

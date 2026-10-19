@@ -426,6 +426,11 @@ than a flat list; the descriptor then reports `configuresWithUiTree`. `Parameter
 is what a client that cannot render a tree falls back to and what the host persists into. Returning `null`
 declines and is not an error. See [Serving a configuration view](https://docs.macro-deck.app/ui/views/configuration/#from-an-action).
 
+A tree's top-level inputs are saved as the parameters they are named after. A value the tree builds itself,
+from nested fields or several inputs, is saved by wrapping the session in an `ActionConfigurationSession`
+and reporting it for its declared parameter; see
+[Reporting values the tree edits](https://docs.macro-deck.app/ui/views/configuration/#reporting-values-the-tree-edits).
+
 ### Inside an action flow
 
 Action flows are user-authored block trees - action calls, conditions, delays, loops, scripts - stored and
@@ -6703,10 +6708,14 @@ initialized. See
 
 ### Testing what a session shows on the pressing client
 
-Pass a `FakeUiEventOrigin` to your session's `Dispatch(UiEvent, IUiEventOrigin)` and read `ReportedFailures`
-and `OpenedModals`. Set `IsAttached = false` to test what happens once the client left, and `ModalAnswer` to
-answer a dialog. `MacroDeckTestHost` has no clients, so over the wire it answers an origin's calls as Macro
-Deck answers them for a client that is no longer attached.
+Pass a `FakeUiEventOrigin` to your session's `Dispatch(UiEvent, IUiEventOrigin)` and read `ReportedFailures`,
+`OpenedModals` and `OpenedUrls`. Set `IsAttached = false` to test what happens once the client left, and
+`ModalAnswer` to answer a dialog. `OpenUrlAsync` refuses a URL that is not `http` or `https` with
+`ArgumentException`, as Macro Deck does, and answers `true` and records the link while the client is attached;
+to test your fallback for a client that cannot open links, set `IsAttached = false`. Unlike Macro Deck, the
+fake does not limit a press to one link: it records every call, so assert on `OpenedUrls` that your session
+opens one. `MacroDeckTestHost` has no clients, so over the wire it answers an origin's calls as Macro Deck
+answers them for a client that is no longer attached.
 
 ### Testing previews
 
@@ -7013,9 +7022,20 @@ When a change affects only a few variables, name them by definition id so the re
 await context.Variables.RequestDefinitionRefreshAsync(["volume-percent", "muted"], cancellationToken);
 ```
 
-Ids you do not declare are ignored and an empty list asks for nothing. Reading more than asked for is always
-allowed: a pending request for every variable covers pending requests for some, and an `IVariableApi` that
-does not override the member, or a Macro Deck that predates it, reads every declared variable instead.
+The ids can also name catalog resources a user bound, so a catalog provider that polls (`SupportsPush` is
+`false`) can turn an event from its service into an immediate read of only the affected resources:
+
+```csharp
+// The service reported that the microphone input was muted.
+await context.Variables.RequestDefinitionRefreshAsync([$"{connectionId}/input/mic/muted"], cancellationToken);
+```
+
+Ids that match neither a declared variable nor a bound catalog resource are ignored, and an empty list asks for
+nothing. Reading more than asked for is always allowed: a pending request for every declared variable covers
+pending requests for declared ones, while named catalog resources are still sent next to it. An `IVariableApi`
+that does not override the member, or a Macro Deck that predates it, reads every declared variable instead. An
+older Macro Deck ignores catalog resource ids, so those resources keep their refresh interval there. Pushed
+catalog resources are unaffected; publish those through the sink.
 
 ### Names
 
