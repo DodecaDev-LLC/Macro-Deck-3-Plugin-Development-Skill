@@ -1195,6 +1195,57 @@ It shows the rules on this page in practice:
 - **Push on change, poll slowly.** It publishes when a device connects or is authorized and refreshes the
   levels every 15 seconds, publishing only devices that changed.
 
+#### The Companion provider
+
+The Macro Deck Companion integration publishes every phone and tablet running the Companion app once it
+reported a battery level, from `IIntegrationContext.CompanionDevices` alone (see
+[Companion devices](https://docs.macro-deck.app/features/companion-devices/)). See
+[`CompanionBatteryProvider.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/host/src/MacroDeckHost.Integrations/Companion/Providers/CompanionBatteryProvider.cs).
+
+- **One device per Companion configuration.** The id is a hash of the configuration's id, stable across
+  reconnects and restarts, and the name is the configuration's title. An iPad is a `tablet` and an iPhone a
+  `phone`; the app reports no form factor, so an Android device is `other`.
+- **Events only.** It publishes when a device reports its state, connects or disconnects, and when
+  configurations change. A disconnected device stays published as not connected until the integration
+  stops; after a restart it returns once it connects and reports a level.
+- **Removed only with its configuration.** Deleting the configuration removes the device for good; a
+  configuration that needs to be set up again keeps it as not connected. Deleting the last configuration
+  turns the integration off before the entry is gone, so its device is withdrawn rather than removed.
+- **Charging is a flag.** The app reports whether it charges, so the state is `Charging`, `Full` at 100 percent,
+  or `Discharging`; `NotCharging` and `Health` are never reported.
+
+#### The System provider
+
+The System integration publishes the computer's own battery: `pmset -g batt` on macOS, `GetSystemPowerStatus`
+on Windows, and every `/sys/class/power_supply` entry of type `Battery` with scope `System` (or none) that
+is present on Linux. See
+[`SystemBatteryProvider.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/host/src/MacroDeckHost.Integrations/System/Providers/SystemBatteryProvider.cs).
+
+- **Ids without hardware data.** `internal-<n>` (the battery's index or, on Linux, its supply name), named
+  after the computer, kind `laptop`. A computer without a battery publishes nothing and stops checking
+  after the first read; it checks again the next time the integration starts.
+- **Polls every 15 seconds** and publishes only what changed. A read that fails keeps the last values; a
+  battery that is gone stays published as not connected and is never removed.
+
+#### The Home Assistant provider
+
+The Home Assistant integration publishes only the battery sensors (domain `sensor`, `device_class`
+`battery`) the user checked in the **Choose battery sensors** step of its configuration, at most 64. See
+[`HomeAssistantBatteryProvider.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/host/src/MacroDeckHost.Integrations/HomeAssistant/Providers/HomeAssistantBatteryProvider.cs).
+
+- **Ids without entity ids.** The local id is a hash of the entity id, so the entity id is not spelled
+  out in the catalog. The hash is not keyed: a plugin that guesses an entity id can confirm it, which tells
+  it little beyond the device name every reader sees anyway. A sensor renamed in Home Assistant is a new device until it is
+  picked again. The name is the Home Assistant device's, or the sensor's own when one device has several
+  picked sensors; the kind is `other`.
+- **Charge state from a sibling sensor.** A `binary_sensor` with `device_class` `battery_charging` on the
+  same device makes the state `Charging` when on and `Discharging` when off; without one it is `Unknown`.
+- **Events, filtered.** It reconciles only when a picked sensor or its charging sensor changes, and on
+  connect and disconnect. An unavailable sensor, a sensor missing after a restart, and every sensor while
+  Home Assistant is unreachable stay published as not connected.
+- **Removed only by the user.** Unchecking a sensor removes it; the integration reloads its configuration
+  in place, so the removal reaches readers and deletes its variables.
+
 ### Older versions of Macro Deck
 
 - **A plugin on an older host.** A Macro Deck that predates battery providers answers a publish with
@@ -1209,8 +1260,9 @@ It shows the rules on this page in practice:
 
 ### Security
 
-**Every plugin can read every battery device**, including the ones of other plugins and Android phones
-reported over ADB, whether or not plugins may use ADB. That is deliberate: a battery level, a name and a
+**Every plugin can read every battery device**, including the ones of other plugins, Android phones
+reported over ADB, whether or not plugins may use ADB, and devices running Macro Deck Companion, whether or
+not plugins may use Companion devices. That is deliberate: a battery level, a name and a
 kind are what a deck shows anyway, and gating them would leave widgets of other plugins blank. So publish
 nothing in a name or id that you would not show every plugin: no serial numbers, no account names you
 would not put on a deck. See [the security model](https://docs.macro-deck.app/policies/security/#battery-devices).
@@ -2061,7 +2113,9 @@ devices** is off, Macro Deck asks the user in a dialog, **A plugin wants to use 
 keeps the question in its notifications; **Allow** turns the setting on. It asks the same way, once per run
 of Macro Deck, when your plugin calls an operation and is refused; a plugin that does not declare
 `host:companion-devices` is refused without asking. That switch covers every plugin that declares the
-permission, not only yours. The user guide describes all of this in
+permission, not only yours. It does not cover a device's battery: the built-in Companion integration
+publishes it to the [battery catalog](https://docs.macro-deck.app/features/batteries/#the-companion-provider), which every plugin reads
+without a permission. The user guide describes all of this in
 [Plugins and your Companion devices](https://docs.macro-deck.app/guide/companion-app/tips/#plugins-and-your-companion-devices).
 
 | `CompanionDeviceAccess` | Meaning |
