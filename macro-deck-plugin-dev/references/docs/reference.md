@@ -1117,7 +1117,7 @@ Do not depend on which internal transport exception produced these results.
 >
 > The fixed set of protocol-level checks any plugin can be run against, in any language, without a Macro Deck installation.
 
-The conformance suite is 49 protocol-level checks in 8 categories. It runs against any plugin, in any language, with no Macro Deck installation: it lives in `MacroDeck.Plugin.Testing.Conformance`, on the same `MacroDeckTestHost` as [Testing plugins](https://docs.macro-deck.app/features/testing/), and produces one report with no test-framework types in it.
+The conformance suite is 50 protocol-level checks in 8 categories. It runs against any plugin, in any language, with no Macro Deck installation: it lives in `MacroDeck.Plugin.Testing.Conformance`, on the same `MacroDeckTestHost` as [Testing plugins](https://docs.macro-deck.app/features/testing/), and produces one report with no test-framework types in it.
 
 ### Example
 
@@ -1294,6 +1294,7 @@ subject that declares `variables` and cannot answer `describe` fails them.
 | <a id="mdc0313"></a>MDC0313 | R | A non-`NoIcon` snapshot with no `Reference` answers `icon.content` with a non-empty `ContentHash` and an `image/*` `MediaType`, reports its `Version` has moved on, or fails only with `AssetTooLarge`; skips without `ProvidesIcon`. | Serve the icon bytes you advertise. |
 | <a id="mdc0314"></a>MDC0314 | R | For each eager variable declaring `write`, writing its current reading back through `variables/set` succeeds as an invocation with a status other than `NotWritable` or `NotFound`; skips without [variables](#variables-precondition) or when nothing declares `write`, inconclusive when every writable variable reads unavailable. | Declare `write` only on variables you accept writes for. |
 | <a id="mdc0315"></a>MDC0315 | R | `variables` and `declaredVariables` together hold at most `VariableLimits.MaxEagerVariablesPerProvider` eager entries, counted across the whole plugin; skips without [variables](#variables-precondition). | Move the rest into a catalog. |
+| <a id="mdc0316"></a>MDC0316 | R | When `ui/describe` lists `pages`, its `surfaces` include the `page` kind, and every page id is a letter or digit followed by up to 63 letters, digits, hyphens or underscores, unique within the plugin; skips without ui or without pages. | Declare a `page` surface with your pages, and give each a unique, well-formed id. |
 
 #### Duplicate ids (MDC04xx)
 
@@ -2496,6 +2497,14 @@ are listed in the descriptor's `capabilityKinds`:
   device, and its only operation, `describe`, answers without data. A host that predates it rejects the
   declaration non-fatally. See [Companion devices](https://docs.macro-deck.app/features/companion-devices/#a-configuration-entry-per-device).
 
+- `ui` `describe` gained the optional `pages`, additively in major `3` and within capability version `1`:
+  the [integration pages](https://docs.macro-deck.app/ui/views/page/) the plugin declares, each with `id`, `title` and an optional
+  `iconName`. The host keeps them only when `surfaces` also declares the `page` kind, and drops a page whose
+  `id` is not a letter or digit followed by up to 63 letters, digits, hyphens or underscores, or repeats an
+  earlier one. A plugin built against an SDK that predates pages omits the member, which reads as none; a
+  host that predates them ignores it. The host then opens a `page` surface with the `integrationId`,
+  `pageId` and `culture` attributes, from an administrator's desktop app only.
+
 See [capabilities](https://docs.macro-deck.app/features/) and [Capability parity](https://docs.macro-deck.app/reference/capability-parity/).
 
 ### Host callbacks
@@ -2531,6 +2540,27 @@ next to `ownerWidgetId`, additively in major `3`, behind `IUserVariableApi.Apply
 `CreateInContextAsync`. A host that predates them ignores them and resolves by `ownerWidgetId` alone, and an
 older plugin never sends them. `create` can answer the new statuses `UnknownScript` and `UnknownAutomation`.
 See [Scopes](https://docs.macro-deck.app/features/variables/#scopes).
+
+`user-variables` later gained `read`, additively in major `3`, behind `IUserVariableApi.ReadInContextAsync`.
+It reads a variable the way `{{ vars.<name> }}` resolves it for a flow in the given context: script local,
+then automation local, then widget local, then global; integration and widget variables by name; script
+inputs excluded. Its arguments are `name` (required) and the optional `ownerWidgetId`, `scriptId` and
+`automationId`. It answers `status` (`Found`, `NotFound`, `InvalidName`, `NotSupported` or `Unavailable`),
+`type` (the variable type's member name, set when found and when unavailable), `value` (a JSON string,
+number or boolean by type, when found), `text` (the value as a template renders it) and `message`
+(diagnostic). The host never caches the answer. A host that predates it answers `CAPABILITY_UNSUPPORTED`,
+which `MacroDeck.Plugin.Hosting` reports as `NotSupported`; a transport failure or an empty reply is
+reported as `Unavailable`.
+
+<a id="ui-uploads"></a>`ui` later gained `origin.read-upload`, additively in major `3`. A
+[code input](https://docs.macro-deck.app/ui/views/configuration/#code-input) whose text is a content resource uploads its edits to the
+host over HTTP and raises `content-uploaded` with an `uploadId`; the plugin then reads the bytes with
+`origin.read-upload` (`sessionId`, `uploadId`). The host answers `found`, and when `true` also
+`byteLength`, `contentHash` and `transferId`, and sends the bytes over `host.asset.*` as kind `ui-upload`
+under that `transferId`. It answers `found: false` alike for an unknown, expired or replaced upload and for
+a session the calling plugin does not serve, so a plugin can never read another's uploads. A host that
+predates it answers `CAPABILITY_UNSUPPORTED`, which `MacroDeck.Plugin.Hosting` turns into
+`NotSupportedException`; a `found: false` becomes `UiUploadNotFoundException`.
 
 The `locale` host API (`time-of-day-format`) and the push-only `http` host API were added the same way. A
 host that predates `locale` answers `CAPABILITY_UNSUPPORTED`, which `MacroDeck.Plugin.Hosting` turns into the
@@ -2571,7 +2601,8 @@ and no colour; an older plugin ignores the push. See [`music-players`](https://d
 
 A callback can return bytes: an icon from the `devices` api's `icon` operation, a widget's rendered
 action icon from its `widget-icon` operation, an Android screenshot from the `adb` api's `screenshot`
-operation, or a Companion device's screenshot from the `companion-devices` api's `screenshot` operation. These travel over `host.asset.*`, a host-to-plugin
+operation, a Companion device's screenshot from the `companion-devices` api's `screenshot` operation, or
+the text a code input uploaded from the `ui` api's `origin.read-upload` operation. These travel over `host.asset.*`, a host-to-plugin
 pipeline kept separate from the plugin-to-host `asset.*` types so those keep their major-1 direction.
 See [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#assets).
 
@@ -3351,10 +3382,10 @@ APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `no
 
 | API | Special rule |
 | --- | --- |
-| `action-interactions` | `show-modal` answers with a modal id as soon as the modal opens; the user's answer arrives later as a `ui`/`modal.result` `capability.invoke` naming that modal. Exactly one result per modal. |
+| `action-interactions` | `show-modal` answers with a modal id as soon as the modal opens; the user's answer arrives later as a `ui`/`modal.result` `capability.invoke` naming that modal. Exactly one result per modal. `request-item-picker` and `request-device-picker` are honoured only while the `actions/execute` named by `executeCorrelationId` is still pending, so a plugin answers that execute only after the host acknowledged the request; the .NET SDK waits for it even when the action returns without awaiting the picker. |
 | `notifications` | `show` answers with the notification id as soon as it is open; how it ended arrives later as a `ui`/`notification.result` `capability.invoke` (`notificationId`, `closeReason`, `actionId`, `clientId`, `values`), exactly once per notification. `update` and `close` name the id and only reach the plugin's own notifications. A result the plugin could not take while detached is sent after it reattaches. `notify` and `dismiss` are unchanged - see [Notifications](https://docs.macro-deck.app/features/notifications/). |
 | `widgets` | The `apply` payload differs by protocol major - see below. `get-data` (`widgetId`) answers `widgetId`, `widgetTypeId` and the stored `data` of a widget whose type the plugin registered, and no result for any other widget. |
-| `ui` | Not charged to the per-plugin callback throttle, except `origin.report-failure`, `origin.show-modal` and `origin.open-url`, which put something on a user's screen. `snapshot`, `patch` and `fault` are bounded per session by `maxUiUpdatesPerSecond` / `maxUiUpdateBurst`; `report-parameter-values` is bounded by `maxUiTreeBytes` per call and relayed only for an action configuration session; `reload` ends its session, and one for a session that already ended is ignored; `register-resource`, `remove-resource` and `register-music-player-artwork` have their own per-plugin rate limit, and `register-music-player-artwork` a tighter one on top. |
+| `ui` | Not charged to the per-plugin callback throttle, except `origin.report-failure`, `origin.show-modal`, `origin.open-url` and `origin.read-upload`, which are charged like any other callback. `snapshot`, `patch` and `fault` are bounded per session by `maxUiUpdatesPerSecond` / `maxUiUpdateBurst`; `report-parameter-values` is bounded by `maxUiTreeBytes` per call and relayed only for an action configuration session; `reload` ends its session, and one for a session that already ended is ignored; `register-resource`, `remove-resource` and `register-music-player-artwork` have their own per-plugin rate limit, and `register-music-player-artwork` a tighter one on top. |
 | `variables` | `refresh` without arguments makes the host read every declared variable of the plugin on its next poll; with `definitionIds` (at most `maxVariableRefreshDefinitionIds`) only those, declared variables and polled catalog resources a user bound alike. Requests that arrive while one is pending are merged. A host that predates it answers `CAPABILITY_UNSUPPORTED`, which the SDK treats as a no-op, and a host that predates `definitionIds` ignores them and reads every declared variable; an older host ignores catalog resource ids, which keep their refresh interval. `bind` (`bindings`: `localResourceId`, `name`, `type`, optional `decimalPlaces` and `migratedFrom`, at most `maxVariableBindingsPerCall`) records bindings from the plugin's own catalog resources to variables, owned by the calling plugin, all or nothing, and answers `outcomes`, one `bound` or `already-bound` per binding in request order; an invalid name, resource id or type answers `INVALID_PAYLOAD`, and a store that cannot be read or written `INTERNAL_ERROR`. `history.open` (`name`, `capacity`) opens a window on one of the plugin's own global variables and answers its `windowId`; a name that is not the plugin's own answers `INVALID_PAYLOAD`, and too many open windows `CAPABILITY_UNAVAILABLE`. `history.read` (`windowId`) answers the `values`, oldest first, and is not charged to the per-plugin callback throttle; `history.close` (`windowId`) closes it. A plugin's windows end with its connection. |
 | `variable-values` | Data-carrying push for the catalog half only; eager variables are always polled via `variables`/`get`. |
 | `event-bindings` | Push-only `host.state`, no `host.invoke` operations. `data` lists the triggers bound to this plugin's own events, each an `eventId` and `parameters` keyed by name (`value`, absent for a state operator, and `operator`). Sent on registration and whenever that list changes. |
@@ -3400,6 +3431,7 @@ For a major `1` session the host translates rather than refuses: `off`/`on` map 
 | `origin.show-modal` | `sessionId`, `clientId`, `viewId`, `title`, `data`, `awaitResult` | Opens one of the plugin's dialogs on that client, under the same condition. Answers `opened` and `modalId`; with `awaitResult` the answer arrives later as a `ui`/`modal.result` `capability.invoke`, exactly as for `action-interactions`/`show-modal`. |
 | `origin.open-url` | `sessionId`, `clientId`, `url` | Opens `url`, an absolute `http` or `https` URL, in the browser of the client that raised an event in the session. Delivered only to the connection the event came from, only while it is attached, only when that client declared it can open links, only within about 10 seconds of the event, and only once per event. Answers `delivered`; `true` does not prove a page opened. Any other scheme answers `INVALID_PAYLOAD`. See [Opening a link on the client that pressed](https://docs.macro-deck.app/ui/views/sessions/#opening-a-link-on-the-client-that-pressed). |
 | `report-parameter-values` | `sessionId`, `values` | Values for the declared parameters of the action the session configures, keyed by parameter name, in the JSON shape Macro Deck stores. Each is treated as a user edit of that parameter, saved when the user saves the action. Undeclared, `Secret` and `Password` parameters and values of the wrong shape are dropped; a session that configures no action ignores the call. Answers an empty result; `PAYLOAD_TOO_LARGE` over `maxUiTreeBytes`, `SESSION_NOT_FOUND` for a session that is not the plugin's. A host that predates it answers `CAPABILITY_UNSUPPORTED`. See [Reporting values the tree edits](https://docs.macro-deck.app/ui/views/configuration/#reporting-values-the-tree-edits). |
+| `origin.read-upload` | `sessionId`, `uploadId` | Reads text a [code input](https://docs.macro-deck.app/ui/views/configuration/#code-input) uploaded in the session. Answers `found`, and when `true` also `byteLength`, `contentHash` and `transferId`; the bytes follow over `host.asset.*` as kind `ui-upload` under `transferId`. An unknown, expired or replaced upload and a session that is not the plugin's both answer `found: false`. A host that predates it answers `CAPABILITY_UNSUPPORTED`. |
 
 `tree` and `patch` are opaque JSON: bounded, then forwarded byte-for-byte (unknown members, member order, number formatting survive). A refused snapshot or patch is an error on its own `host.result`: `PAYLOAD_TOO_LARGE`, `RATE_LIMITED`, `INVALID_PAYLOAD`, `SESSION_NOT_FOUND`. See [Serving a view](https://docs.macro-deck.app/ui/views/sessions/).
 
@@ -3837,13 +3869,14 @@ report. Its shape is `CompanionDevicesStateDto`:
 {"type":"host.state","id":"<uuid-v7>","payload":{"api":"companion-devices","data":{"access":"available","revision":12,
  "devices":[{"deviceId":"5d0c6a8e-3b1f-4c2a-9e57-0a1b2c3d4e5f","readySequence":3,"batteryLevelPercent":80,
    "charging":false,"orientation":"landscape","screenBrightnessPercent":60,"model":"SM-X200","platform":"Android 14",
-   "appVersion":"3.0.0","capabilities":["screenOff","screenshotDeck"],"requestableCapabilities":["screenOn","focus"],
+   "appVersion":"3.0.0","formFactor":"tablet","capabilities":["screenOff","screenshotDeck"],"requestableCapabilities":["screenOn","focus"],
    "confirmsCommands":true,"inFocus":true,"networkType":"wifi","networkMetered":false,"networkValidated":true}]}}}
 ```
 
 `access` is `available` or `not-allowed`; `devices` is empty unless it is `available`, and a device that left
 is simply absent. A value the device does not report is absent; percentages are 0 to 100 and texts at most
-64 characters. `readySequence` changes exactly when a device becomes ready again after it was gone.
+64 characters. `formFactor` is `phone`, `tablet` or `desktop`, absent on a host that predates it.
+`readySequence` changes exactly when a device becomes ready again after it was gone.
 `capabilities` and `requestableCapabilities` are open lists: ignore a name you do not know. `revision`
 follows the same rule as the `deck` push: apply a push only when its revision is higher than the last one
 applied in this session. A host without this api never pushes it and answers every `companion-devices`
@@ -3988,7 +4021,7 @@ Built from the schema:
 | `host.asset.ack` | plugin → host | same as `asset.ack` |
 
 - `totalBytes` is checked against `maxAssetBytes` before a byte is buffered; each chunk's pre-encoding size is bounded by `maxAssetChunkBytes`.
-- The `kind` values are `icon`, `artwork`, `action-icon`, `ui-resource`, `icon-pack`, `android-screenshot` and `companion-screenshot`. `android-screenshot` and `companion-screenshot` are host to plugin only: the host refuses them in `asset.begin`. A `ui-resource` upload is also refused at `asset.begin` when it is empty, larger than `maxUiResourceBytes` (`ASSET_TOO_LARGE`), or not `image/png`, `image/jpeg`, `image/webp` or `image/gif` (`INVALID_PAYLOAD`). Its bytes are held in memory for the `ui`/`register-resource` call that follows and are never written to the host's on-disk asset cache. An `icon-pack` upload is held the same way, for the `icon-packs`/`sync-bundled` call that follows.
+- The `kind` values are `icon`, `artwork`, `action-icon`, `ui-resource`, `icon-pack`, `android-screenshot`, `companion-screenshot` and `ui-upload`. `android-screenshot`, `companion-screenshot` and `ui-upload` are host to plugin only: the host refuses them in `asset.begin`. A `ui-resource` upload is also refused at `asset.begin` when it is empty, larger than `maxUiResourceBytes` (`ASSET_TOO_LARGE`), or not `image/png`, `image/jpeg`, `image/webp`, `image/gif` or `text/plain` (`INVALID_PAYLOAD`). Its bytes are held in memory for the `ui`/`register-resource` call that follows and are never written to the host's on-disk asset cache. An `icon-pack` upload is held the same way, for the `icon-packs`/`sync-bundled` call that follows.
 - One unacknowledged step in flight at a time, never a burst.
 - `index` must equal the next expected index: no reordering, gaps or duplicates.
 - `asset.commit` verifies the final byte count and a recomputed content hash against `asset.begin`.

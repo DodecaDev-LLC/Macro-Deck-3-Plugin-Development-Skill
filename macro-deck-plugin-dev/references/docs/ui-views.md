@@ -10,6 +10,7 @@ Contents:
 - Developer preview: https://docs.macro-deck.app/ui/views/developer-preview/
 - Folder views: https://docs.macro-deck.app/ui/views/folder-views/
 - Modal views: https://docs.macro-deck.app/ui/views/modal/
+- Integration pages: https://docs.macro-deck.app/ui/views/page/
 - Screensavers: https://docs.macro-deck.app/ui/views/screensavers/
 - Serving a view: https://docs.macro-deck.app/ui/views/sessions/
 - Configuring a widget: https://docs.macro-deck.app/ui/views/widget-configuration/
@@ -52,6 +53,7 @@ public sealed class WeatherUiProvider : IUiProvider
 | `folder` | A whole folder that selected a custom view | Every client showing the folder | shared | [Folder views](https://docs.macro-deck.app/ui/views/folder-views/) |
 | `screensaver` | What a device shows after sitting idle | The device itself, when its idle timer fires | shared | [Screensavers](https://docs.macro-deck.app/ui/views/screensavers/) |
 | `dialog` | A modal an action opened | The action | exclusive | [Modal views](https://docs.macro-deck.app/ui/views/modal/) |
+| `page` | A tab an integration adds to its own page in the desktop app | An administrator, from the integration's page | exclusive | [Integration pages](https://docs.macro-deck.app/ui/views/page/) |
 | `developer-preview` | One `[UiPreview]` scenario | Developer Tools | exclusive | [Developer preview](https://docs.macro-deck.app/ui/views/developer-preview/) |
 
 - **shared** - several clients may be attached at once, such as the same widget on two devices. You never
@@ -403,6 +405,100 @@ In a declared field list, the counterparts are `ActionParameter.File` (with `fil
 `ActionParameter.Folder` and `ActionParameter.Image`, which takes no extensions and always offers the
 image formats.
 
+<a id="code-input"></a>
+
+### Editing code
+
+A `UiCodeInput` draws Macro Deck's code editor, with line numbers, undo, search and bracket matching:
+
+```csharp
+new UiCodeInput
+{
+    Key = "script",
+    Label = Strings.Script.Label(),
+    Language = UiCodeLanguages.AutoHotkey,
+    VariableInsertFormat = "MacroDeck.GetVar(\"{name}\")",
+    Binding = Bind.To(script),
+}
+```
+
+| Node type | DSL element | Value |
+| --- | --- | --- |
+| `code` | `UiCodeInput` | The source text, or nothing in content-resource mode (below) |
+
+- **`Language`** picks the highlighting. `UiCodeLanguages` names the languages Macro Deck ships
+  highlighting for: `text`, `json`, `liquid` and `autohotkey` (v2). The vocabulary is
+  open: a language a client does not know is edited as plain text, never refused. `ActionParameter.Code`
+  takes the same values.
+- **`VariableInsertFormat`** adds an **Insert variable** button. The editor inserts the format at the cursor
+  with every `{name}` replaced by the picked variable's name; names are letters, digits and `_ . : -`, so
+  nothing is escaped. Without it there is no button, and a client from before the property ignores it.
+- **`Rows`** sets how many lines the editor shows, which is its visible height; longer text scrolls. Without
+  it the editor keeps its default height. The desktop app clamps the value to 3 to 60 lines, and a client
+  from before the property draws its default height.
+
+#### Text too large for the tree
+
+Up to about a megabyte of source does not belong in a tree, which every patch would carry. Register the
+text as a `text/plain` [UI resource](https://docs.macro-deck.app/ui/reference/resources/#registering-your-own-images) and hand the
+handle to `ContentResource`; the editor loads the text from it instead of the bound value:
+
+```csharp
+var name = "script-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+var handle = await context.UiResources.RegisterAsync(name, Encoding.UTF8.GetBytes(source), "text/plain");
+
+new UiCodeInput
+{
+    Key = "script",
+    Language = UiCodeLanguages.AutoHotkey,
+    ContentResource = UiValue.Of(handle),
+    Events =
+    [
+        UiCodeInput.OnContentUploaded(async (upload, cancellationToken) =>
+        {
+            var origin = _origin;
+            _draft = await origin!.ReadUploadAsync(upload.UploadId, cancellationToken);
+        }),
+        UiCodeInput.OnContentUploadFailed(() => { }),
+    ],
+}
+```
+
+`_origin` is the origin your session keeps in `Dispatch`, as [Serving a view](https://docs.macro-deck.app/ui/views/sessions/) shows.
+
+In this mode the text never travels in an event and the input sends no `change`:
+
+1. While the user edits, the editor uploads the whole text (UTF-8, at most 2 MiB) to Macro Deck, shortly
+   after typing stops and when the editor loses focus.
+2. It then raises `content-uploaded` with `uploadId`, `length` and `contentHash`, the SHA-256 Macro Deck
+   computed in the `sha256:<hex>` form a resource's content hash takes. `OnContentUploaded` hands you that
+   as a `UiContentUpload`.
+3. Read the bytes with `IUiEventOrigin.ReadUploadAsync(uploadId)` on the origin of that event. An origin
+   reads only uploads of its own session. An upload is held for five minutes, until a newer upload of the
+   same input replaces it, or until the session closes; after that the read throws
+   `UiUploadNotFoundException`, and you ignore that event, because a newer one follows.
+4. The client holds the session's later events until the upload event is sent, so a Save button pressed
+   right after typing always sees the latest text.
+
+When the upload fails (too large, the network, more than four uploads pending in the session) the client
+shows the failure, raises `content-upload-failed` without data, and your handler keeps the previous draft.
+
+To save, register the uploaded bytes unchanged as the input's next resource. When the tree then names a
+resource whose content hash equals the client's own last upload, the client keeps its editor state,
+cursor and undo history included. Changing the bytes, even only a byte order mark or line endings, makes
+it reload the text.
+
+- **Security:** a resource is readable by any client signed in to Macro Deck that knows its id, and the id
+  is made of your plugin's id and the name. Use an unguessable name, as above, register again under a new
+  name rather than reusing one that was shown before, and remove a name when nothing shows it.
+- **Use it on a [page](https://docs.macro-deck.app/ui/views/page/).** The desktop app uploads edits only from a page session. In any
+  other session, such as a config flow, a folder view or a modal, it raises `content-upload-failed`
+  instead, so the provider never receives the edited text there.
+- A client from before content resources ignores `ContentResource` and edits the bound value, which is
+  empty when you keep the text out of the tree. `ReadUploadAsync` on a Macro Deck from before uploads
+  throws `NotSupportedException`.
+- In tests, `FakeUiEventOrigin.AddUpload` makes bytes readable under an upload id.
+
 ### Letting the user set colour thresholds
 
 A `UiThresholdsInput` works in a config flow and an action's configuration as it does in a
@@ -542,6 +638,85 @@ new UiWhen
 ```
 
 A renderer that predates `dialog` declines it and draws its fallback in place.
+
+<a id="page-layout"></a>
+
+### Page layout
+
+A tree that fills a whole page, such as an [integration page](https://docs.macro-deck.app/ui/views/page/), is laid out like Macro
+Deck's own library pages with four layout types and a few presentation properties. They work in every
+configuration surface, but they are made for a page.
+
+| Node type | DSL element | What it draws |
+| --- | --- | --- |
+| `split` | `UiSplit` | A titled rail beside a detail card; stacked on a narrow screen |
+| `list` | `UiConfigList` | Selectable rows, each a `list-item` |
+| `list-item` | `UiConfigListItem` | One row: label, description, icon, badge, status dot, trailing controls |
+| `empty-state` | `UiEmptyState` | An icon, a title and a line of text for a region with nothing in it |
+
+**`UiSplit`** has three regions: `RailActions` (controls in the rail's header beside `RailTitle`, such as an
+icon button that adds an item), `Rail` (typically a `UiConfigList`) and `Detail` (drawn on a card). On the
+wire a `split` node always has exactly three `stack` children in that order, keyed `rail-actions`, `rail` and
+`detail`, each present even when empty, so a reader finds a region by its position and a patch edits a region
+like any stack. A region does not open an input scope: an input in the detail keeps its bare key.
+
+**`UiConfigListItem`** carries `Label`, `Description` (a muted second line), `Icon`, `Badge` (a short tag
+such as a count), `Severity` (a status dot: `info`, `success`, `warning` or `error`, as on a banner) and
+`Selected`. Choosing the row raises `activate`; set `Selected` in the handler. Its children are drawn
+trailing the row, typically a `UiConfigMenu` with the row's own actions, and choosing one of those does not
+activate the row. A list contributes no key and no value: the selection is the provider's own state.
+
+**Selection is per session.** A page is an exclusive surface, so every client that opens it has its own
+session, and one client's selection never shows up in another's tree. In a shared surface every attached
+client sees the same row selected.
+
+**`UiEmptyState`** carries `Icon`, `Title` and `Text`; its children, such as a button that creates the
+first item, are drawn below the text.
+
+The presentation properties change how existing types are drawn:
+
+| Property | On | Values | Absent |
+| --- | --- | --- | --- |
+| `Variant` | `UiConfigButton` | `UiButtonVariants`: `primary`, `secondary`, `danger`, `ghost` | `secondary`, as before |
+| `IconWithLabel` | `UiConfigButton` | `true` draws the `Label` beside the `Icon` | icon-only when `Icon` is set, as before |
+| `Align` | `UiConfigStack` | `UiStackAlignments`: `start`, `center`, `end`, `space-between` | `start`, as before |
+| `Gap` | `UiConfigStack` | `UiStackGaps`: `none`, `small`, `medium`, `large` | `medium`, as before |
+| `Variant` | `UiConfigStack` | `UiStackVariants.Card` (`card`): a framed section on the theme's card surface | a plain stack |
+| `Badge` | `UiHeading` | A short tag beside the caption, such as "Unsaved" | the caption alone |
+
+`Accent` keeps its meaning on a plain stack (the fixed dark card described under
+[Styled text and cards](#styled-text-and-cards)). On a stack whose `Variant` is `card`, it adds a leading bar
+in its colour to the theme card instead. `ConfirmDanger` styles a button's confirmation dialog; use
+`Variant = "danger"` to style the button itself. In a menu, either one draws the entry as a danger entry.
+
+```csharp
+new UiConfigStack
+{
+    Key = "footer",
+    Direction = "horizontal",
+    Align = UiStackAlignments.End,
+    Gap = UiStackGaps.Small,
+    Children =
+    [
+        new UiConfigButton { Key = "discard", Label = Strings.Page.Discard() },
+        new UiConfigButton
+        {
+            Key = "save",
+            Label = Strings.Page.Save(),
+            Icon = "check",
+            IconWithLabel = true,
+            Variant = UiButtonVariants.Primary,
+        },
+    ],
+}
+```
+
+**No fallback is invented.** Like `status`, `menu` and `dialog`, a reader that predates `split`, `list`,
+`list-item` or `empty-state` declines the node and draws its explicit `Fallback`, or nothing without one. A
+reader that predates the properties ignores them and draws an ordinary button, a plain stack and a heading
+without a badge. Give a node a `Fallback` where an older reader matters; Macro Deck's own desktop app always
+draws the current types. See [UI model compatibility](https://docs.macro-deck.app/ui/reference/compatibility/#additions-that-moved-no-version)
+and the full example in [Integration pages](https://docs.macro-deck.app/ui/views/page/#a-master-detail-page).
 
 ### Declining and fallback
 
@@ -1262,6 +1437,220 @@ client can only show a few modals at once. Do not hold a modal open as a substit
 
 To ask something of every client at once, or to show a message that is not tied to a running action, see [Notifications](https://docs.macro-deck.app/features/notifications/).
 
+## Integration pages
+
+> Source: https://docs.macro-deck.app/ui/views/page/
+>
+> Adding a tab of your own to your integration's page in the Macro Deck app, served as a page surface.
+
+Declare a page to give your integration a tab of its own on its page in the Macro Deck app, beside the
+capability tabs Macro Deck draws itself. Use it for something your integration manages as a whole, such as
+a library of scripts, rather than for one action or widget.
+
+### Example
+
+```csharp
+public sealed class ScriptsUiProvider : IUiProvider
+{
+    public IReadOnlyList<UiSurfaceDeclaration> Surfaces { get; } =
+        [new() { Kind = UiSurfaceKinds.Page, SessionMode = UiSessionModes.Exclusive }];
+
+    public IReadOnlyList<UiPageDeclaration> Pages { get; } =
+        [new() { Id = "scripts", Title = Strings.Page.Scripts(), IconName = "code" }];
+
+    public Task<IUiSession?> CreateSessionAsync(UiSessionRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Surface.Kind != UiSurfaceKinds.Page
+            || !request.Surface.Attributes.TryGetValue(UiPageSurfaceAttributes.PageId, out var pageId)
+            || pageId.GetString() != "scripts")
+        {
+            return Task.FromResult<IUiSession?>(null);
+        }
+
+        return Task.FromResult<IUiSession?>(new ScriptsPageSession(request.Surface));
+    }
+}
+```
+
+### Declaring a page
+
+`IUiProvider.Pages` lists your pages in the order their tabs appear. It is read like `Surfaces`: before
+anything is initialized, so keep it free of side effects and independent of a connection or configuration.
+
+| `UiPageDeclaration` | Meaning |
+| --- | --- |
+| `Id` | Names the page within your integration. A letter or digit, then up to 63 letters, digits, hyphens or underscores. |
+| `Title` | The tab's label, localized. |
+| `IconName` | A built-in [icon](https://docs.macro-deck.app/ui/components/icon/) shown beside the title, or `null`. |
+
+**Declare a `page` surface too.** Macro Deck shows the pages of a provider only when `Surfaces` contains
+the `page` kind, and skips a page whose `Id` is malformed or repeats an earlier one. Conformance check
+[MDC0316](https://docs.macro-deck.app/reference/conformance/#mdc0316) reports either mistake.
+
+### Serving the page
+
+When an administrator opens the tab, Macro Deck opens a `page` session on your provider. Its surface
+carries `UiPageSurfaceAttributes`:
+
+| Attribute | Value |
+| --- | --- |
+| `IntegrationId` (`integrationId`) | Your integration's id. |
+| `PageId` (`pageId`) | The `Id` of the page the tab shows. Decline an id you do not recognise. |
+| `Culture` (`culture`) | The culture the user reads Macro Deck in, for example `de` or `pt-BR`, when Macro Deck knows it. |
+
+- A page session is **exclusive**. Every opening of the tab is its own session, ended when the user leaves
+  the tab.
+- **Only an administrator's desktop app opens one.** A deck device cannot, and is told the session is
+  forbidden before Macro Deck looks at your pages.
+- A plugin's page opens only while the plugin is connected; a disabled integration's pages do not open.
+- Everything else is an ordinary session: the [lifecycle and limits](https://docs.macro-deck.app/ui/views/sessions/) of every surface
+  apply, and inputs, buttons and the [event origin](https://docs.macro-deck.app/ui/views/sessions/) work as in any view. A page that
+  edits large text uses a [code input with a content resource](https://docs.macro-deck.app/ui/views/configuration/#code-input).
+
+### A master-detail page
+
+A page that manages a library looks best laid out like Macro Deck's own Scripts and Variables pages: a
+[split](https://docs.macro-deck.app/ui/views/configuration/#page-layout) with the items in its rail and the selected one in its detail.
+Each page session builds its own view, so each client keeps its own selection:
+
+```csharp
+private UiView BuildLibraryView(UiSurface surface)
+{
+    var selected = new UiState<string?>(null);
+
+    UiElement Row(Note note) => new UiConfigListItem
+    {
+        Key = note.Id,
+        Label = note.Title,
+        Description = note.Summary,
+        Icon = "file",
+        Severity = note.HasErrors ? "error" : "success",
+        Selected = UiValue.From(() => selected.Value == note.Id),
+        Events = [UiEventHandler.On(UiConfigEvents.Activate, () => selected.Value = note.Id)],
+        Children =
+        [
+            new UiConfigMenu
+            {
+                Key = "actions",
+                Label = Strings.Page.Actions(),
+                Children =
+                [
+                    new UiConfigButton
+                    {
+                        Key = "delete",
+                        Label = Strings.Page.Delete(),
+                        Icon = "trash",
+                        Variant = UiButtonVariants.Danger,
+                        ConfirmMessage = Strings.Page.DeleteQuestion(),
+                        ConfirmDanger = true,
+                        Events = [UiEventHandler.On(UiConfigEvents.Activate, () => _notes.Remove(note.Id))],
+                    },
+                ],
+            },
+        ],
+    };
+
+    return new UiView(surface, new UiSplit
+    {
+        Key = "page",
+        RailTitle = Strings.Page.Notes(),
+        RailActions =
+        [
+            new UiConfigButton
+            {
+                Key = "new",
+                Label = Strings.Page.New(),
+                Icon = "plus",
+                Events = [UiEventHandler.On(UiConfigEvents.Activate, () => selected.Value = _notes.Add())],
+            },
+        ],
+        Rail =
+        [
+            new UiConfigList
+            {
+                Key = "notes",
+                Label = Strings.Page.Notes(),
+                Children =
+                [
+                    new UiRepeat<Note>
+                    {
+                        Key = "rows",
+                        Items = UiValue.From(() => _notes.All),
+                        KeySelector = note => note.Id,
+                        Template = (note, _) => Row(note),
+                    },
+                ],
+            },
+        ],
+        Detail =
+        [
+            new UiWhen
+            {
+                Key = "nothing-when",
+                Condition = () => selected.Value is null,
+                Content = () => new UiEmptyState
+                {
+                    Key = "nothing",
+                    Icon = "file",
+                    Title = Strings.Page.NothingSelected(),
+                    Text = Strings.Page.PickOrCreate(),
+                },
+            },
+            new UiWhen
+            {
+                Key = "note-when",
+                Condition = () => selected.Value is not null,
+                Content = () => new UiConfigStack
+                {
+                    Key = "note",
+                    Gap = UiStackGaps.Large,
+                    Children =
+                    [
+                        new UiHeading
+                        {
+                            Key = "title",
+                            Text = UiText.From(() => _notes.Get(selected.Value!).Title),
+                            Badge = UiText.Optional(() => _notes.IsDirty(selected.Value!) ? Strings.Page.Unsaved() : UiText.None()),
+                        },
+                        new UiStringInput { Key = "body", Multiline = true, Binding = _notes.BodyOf(selected) },
+                        new UiConfigStack
+                        {
+                            Key = "footer",
+                            Direction = "horizontal",
+                            Align = UiStackAlignments.End,
+                            Children =
+                            [
+                                new UiConfigButton { Key = "discard", Label = Strings.Page.Discard() },
+                                new UiConfigButton { Key = "save", Label = Strings.Page.Save(), Variant = UiButtonVariants.Primary },
+                            ],
+                        },
+                    ],
+                },
+            },
+        ],
+        Fallback = new UiProse { Key = "update", Text = Strings.Page.UpdateMacroDeck() },
+    });
+}
+```
+
+`_notes` stands for the integration's own store, and `UiRepeat` and `UiWhen` are the usual
+[reactive building blocks](https://docs.macro-deck.app/ui/concepts/reactive-updates/). The rail lists every note with a delete action in
+its trailing menu, and the detail shows an empty state until a row is chosen. The `Fallback` is what a
+Macro Deck release from before the layout types draws instead of the split.
+
+### Compatibility
+
+`Pages` is a default interface member that answers no pages, so a provider written before pages keeps
+compiling and declares none. Out of process, the pages travel as the optional `pages` member of
+`ui/describe`. A Macro Deck release from before pages ignores both the member and the `page` surface, and
+shows no tab.
+
+### See also
+
+- [Serving a view](https://docs.macro-deck.app/ui/views/sessions/)
+- [Views and surfaces](https://docs.macro-deck.app/ui/views/)
+- [Serving a configuration view](https://docs.macro-deck.app/ui/views/configuration/)
+
 ## Screensavers
 
 > Source: https://docs.macro-deck.app/ui/views/screensavers/
@@ -1711,7 +2100,7 @@ Like the other provider-shaped capabilities, `ui` declares the single local id `
 
 | Operation | Purpose |
 | --- | --- |
-| `describe` | The surfaces this provider serves, the UI model version it speaks, and the [preview scenarios](https://docs.macro-deck.app/ui/views/developer-preview/) it declares. `previews` is optional: a plugin built against an SDK that predates it omits the key, and the host reads that as none. |
+| `describe` | The surfaces this provider serves, the UI model version it speaks, and the [preview scenarios](https://docs.macro-deck.app/ui/views/developer-preview/) it declares. `previews` is optional: a plugin built against an SDK that predates it omits the key, and the host reads that as none. `pages` lists the [integration pages](https://docs.macro-deck.app/ui/views/page/) it declares, optional the same way. |
 | `session.open` | Open a session for one surface. The session id is host-issued; a provider never mints one. |
 | `session.open` (config) | A `config` surface names its entry point in its surface attributes - `integration-config` with the config flow session, `action-config` with the action id and the instance's stored parameters, `folder-view-config` with the folder and its view, or `widget-config` with the widget id, type and stored configuration. `MacroDeck.Plugin.Hosting` routes `integration-config` and `action-config` to `IUiConfigFlow`/`IUiConfigurableActionDefinition` before it consults `IUiProvider`. |
 | `session.open` (developer preview) | A `developer-preview` surface names one registered scenario in its surface attributes. `MacroDeck.Plugin.Hosting` builds that scenario and never consults `IUiProvider`, so a production provider is unreachable from a preview. |
@@ -1728,6 +2117,12 @@ a client still attached to it, and answers `delivered: false` or `opened: false`
 also needs the conditions in [Opening a link on the client that pressed](#opening-a-link-on-the-client-that-pressed)
 and answers `INVALID_PAYLOAD` for a URL that is not `http` or `https`. A host that predates them answers
 `CAPABILITY_UNSUPPORTED`, which the SDK turns into `false` or a cancellation.
+
+`origin.read-upload` reads text a [code input](https://docs.macro-deck.app/ui/views/configuration/#code-input) uploaded in one of the
+plugin's sessions. It answers `found: false` for any session the plugin does not serve, so one plugin never
+reads another's uploads, and sends the bytes after the reply as a `ui-upload` asset; see
+[the protocol reference](https://docs.macro-deck.app/reference/protocol/#ui-uploads). A host that predates it answers
+`CAPABILITY_UNSUPPORTED`, which the SDK turns into `NotSupportedException`.
 
 An action configuration session that reports parameter values (see
 [From an action](https://docs.macro-deck.app/ui/views/configuration/#reporting-values-the-tree-edits)) sends them as
@@ -1746,6 +2141,7 @@ flushing refuses the request as an unknown type, so a client treats that as flus
 ### See also
 
 - [Views and surfaces](https://docs.macro-deck.app/ui/views/)
+- [Integration pages](https://docs.macro-deck.app/ui/views/page/)
 - [Patches](https://docs.macro-deck.app/ui/reference/patches/)
 - [Resources](https://docs.macro-deck.app/ui/reference/resources/)
 - [Plugin hosting](https://docs.macro-deck.app/reference/plugin-hosting/)

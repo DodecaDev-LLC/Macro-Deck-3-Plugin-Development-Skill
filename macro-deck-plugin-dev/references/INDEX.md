@@ -56,6 +56,7 @@ Search everything: `grep -rn "<Type or term>" references/`.
 | `docs/ui-views.md` | Developer preview | Registering [UiPreview] scenarios so Developer Tools can render a view in states that are hard to reach live. | https://docs.macro-deck.app/ui/views/developer-preview/ |
 | `docs/ui-views.md` | Folder views | Replacing a folder's whole surface with a Macro Deck UI view, and what Macro Deck keeps for itself. | https://docs.macro-deck.app/ui/views/folder-views/ |
 | `docs/ui-views.md` | Modal views | Opening a dialog from an action or a widget, how it is sized, which node completes it, and what bounds the wait. | https://docs.macro-deck.app/ui/views/modal/ |
+| `docs/ui-views.md` | Integration pages | Adding a tab of your own to your integration's page in the Macro Deck app, served as a page surface. | https://docs.macro-deck.app/ui/views/page/ |
 | `docs/ui-views.md` | Screensavers | Offering what a device shows after it has sat idle, and what Macro Deck does with the touch that wakes it. | https://docs.macro-deck.app/ui/views/screensavers/ |
 | `docs/ui-views.md` | Serving a view | IUiProvider, the session lifecycle every surface shares, the protocol limits, and what a refused update looks like. | https://docs.macro-deck.app/ui/views/sessions/ |
 | `docs/ui-views.md` | Configuring a widget | Describing a widget's configuration as two named regions Macro Deck lays out, and reaching the editors the app already ships. | https://docs.macro-deck.app/ui/views/widget-configuration/ |

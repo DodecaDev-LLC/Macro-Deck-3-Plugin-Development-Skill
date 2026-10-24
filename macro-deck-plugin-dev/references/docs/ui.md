@@ -1197,6 +1197,15 @@ profile's rule decides which of the two a new feature is. [Modifiers](https://do
 | `overflow` on `ui.stack` (`clip-start`), component version 2 | A property, gated by a component version | Draws the node's `fallback`, because a producer using `clip-start` asks for version 2. Without that ask a version 1 reader ignores the key and shrinks every child into the box. |
 | `anchor` on `ui.list` (`end`), component version 3 | A property, gated by a component version | Draws the node's `fallback`, because a producer using `end` asks for version 3. Without that ask a version 2 reader ignores the key and leaves the view where the user put it, so new rows at the end stay below the fold. |
 | `ui.responsive` and its `variants` property, component version 1 | A type | Draws the node's `fallback`. Unlike `ui.modifier`, one is invented when you set none: a copy of the default layout. When it decides whether the tile's own press belongs to a control, it walks every layout, not only the one it would have drawn - see [Responsive](https://docs.macro-deck.app/ui/components/responsive/#older-readers). |
+| `variableInsertFormat` and `contentResource` on `code` | Properties | Ignores them: offers no variable insertion and edits the bound value, which is empty when the provider keeps the text in a resource. See [Editing code](https://docs.macro-deck.app/ui/views/configuration/#code-input). |
+| `content-uploaded`, `content-upload-failed` | Event names | Never sends them, because it never uploads. |
+| `rows` on `code` | A property | Ignores it and draws the editor at its default height. |
+| `page` | A surface kind | Has no page tab, so never opens one. See [Integration pages](https://docs.macro-deck.app/ui/views/page/). |
+| `split` (`UiSplit`), `list` (`UiConfigList`), `list-item` (`UiConfigListItem`) and `empty-state` (`UiEmptyState`) | Configuration types | Declines each one and draws the node's explicit `fallback`; without one, nothing. No fallback is invented for you. See [Page layout](https://docs.macro-deck.app/ui/views/configuration/#page-layout). |
+| `railTitle` on `split`; `label`, `description`, `icon`, `badge`, `severity` and `selected` on `list-item`; `icon`, `title` and `text` on `empty-state` | Properties of the new types | Only a reader that knows the types reads them. |
+| `variant` and `iconWithLabel` on `button` | Properties | Ignores them and draws an ordinary button, icon-only when it has an `icon`. |
+| `align`, `gap` and `variant` (`card`) on `stack` | Properties | Ignores them and draws a plain stack, packed at the start with the usual spacing; an `accent` on it then keeps its old meaning. |
+| `badge` on `heading` | A property | Ignores it and draws the caption alone. |
 | `ui.first-fit`, component version 1 | A type | Draws the node's `fallback`. One is invented when you set none: a copy of the last layout, the one that is always acceptable. When it decides whether the tile's own press belongs to a control, it walks every layout - see [First fit](https://docs.macro-deck.app/ui/components/first-fit/#older-readers-and-readers-that-cannot-measure). |
 | `macrodeck.video-stream` and its `stream` property, component version 1 | A type | Draws the node's `fallback`, and opens no session. See [Video stream](https://docs.macro-deck.app/ui/components/video-stream/#older-readers). |
 | `transparent` as the `background` of `ui.stack` and `ui.button` | A value | Treats it as no background: a stack draws the tile face behind it, a button its accent colour. The tile face stays, so the folder background does not show through. |
@@ -1347,8 +1356,16 @@ one you build yourself: it carries the `contentHash` that makes clients fetch ne
   photo frame can show every picture under one name. Update the tree with the new handle and clients draw
   the new picture; a client still holding the old hash is sent the current bytes without caching them.
   Registering the same bytes under the same name again costs no upload.
-- **Media types** are `image/png`, `image/jpeg`, `image/webp` and `image/gif`. SVG is not accepted from a
-  plugin, the same rule as for icons a plugin supplies. PNG and JPEG are the safe choice for photos.
+- **Media types** are `image/png`, `image/jpeg`, `image/webp` and `image/gif`, plus `text/plain` (UTF-8)
+  for the text of a [code input](https://docs.macro-deck.app/ui/views/configuration/#code-input). SVG is not accepted from a plugin, the
+  same rule as for icons a plugin supplies. PNG and JPEG are the safe choice for photos. Text is served as
+  `text/plain; charset=utf-8` under the same `nosniff` and sandbox rules as every resource, so a browser
+  never runs it. A Macro Deck release from before text resources refuses the upload, and the
+  registration throws `UiResourceException` with `Failed`; a plugin built against an SDK from before them
+  refuses the media type itself with an `ArgumentException`.
+- **Anyone signed in to Macro Deck can read a resource whose id they know**, and the id is your plugin's id
+  and the name. Register text under an unguessable name, for example one that ends in 32 random hex
+  digits, and remove it when nothing shows it any more.
 - **Size.** One resource is at most `maxUiResourceBytes` (2 MiB). That limit is deliberate and applies per
   resource: downscale camera photos before registering them. All of a plugin's resources together are at
   most `maxUiResourceBytesPerPlugin` (48 MiB) and `maxUiResourcesPerPlugin` (1024); Macro Deck holds them in

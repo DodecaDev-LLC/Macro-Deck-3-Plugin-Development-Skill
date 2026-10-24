@@ -310,6 +310,44 @@ option's label. Other parameter
 types ignore it, and so does a Macro Deck release from before `Searchable`, which draws the plain select.
 For a configuration view, see [Letting the user search a long list](https://docs.macro-deck.app/ui/views/configuration/#letting-the-user-search-a-long-list).
 
+#### Code parameters
+
+`ActionParameter.Code(name, language)` draws a code editor. `language` picks its highlighting; use one of
+the documented `UiCodeLanguages` values from `MacroDeck.Ui` (the same vocabulary as a
+[code input](https://docs.macro-deck.app/ui/views/configuration/#code-input)). An editor that does not know the language shows plain text.
+
+Set `VariableInsertFormat` to offer an **Insert variable** button: the editor inserts the format at the
+cursor with `{name}` replaced by the picked variable's name.
+
+```csharp
+new ActionParameter
+{
+	Name = "script",
+	Type = ActionParameterType.Code,
+	Language = "autohotkey",
+	Label = Strings.Parameters.Script(),
+	VariableInsertFormat = "MacroDeck.GetVar(\"{name}\")"
+}
+```
+
+Inserting only edits the code text. Macro Deck never renders a `Code` value as a template, so your
+language reads the variable itself at run time. Without the format, and on a desktop release from before
+`VariableInsertFormat`, the editor offers no insertion. Other parameter types ignore it.
+
+#### Rendering array items
+
+An `Array` parameter's items reach the executor exactly as the user entered them. Call
+`WithTemplatedItems()` to have Macro Deck render them first, like other templated parameters: a string
+item is rendered as a template, so `--user={{ vars.user }}` arrives as `--user=Ada`, and an item bound to
+a variable arrives as that variable's value. Other items are passed unchanged.
+
+```csharp
+ActionParameter.Array("arguments", ActionParameter.Text("argument"), label: Strings.Parameters.Arguments())
+	.WithTemplatedItems()
+```
+
+A Macro Deck release from before `TemplatedItems` ignores it and passes the items as entered.
+
 ### What the executor gets
 
 | `ActionExecutionContext` | |
@@ -487,6 +525,10 @@ integration uses the pattern above after starting a stream.
 | `options` | `IDynamicOptionsActionDefinition.GetDynamicOptionsAsync` |
 | `state` | [`IStateProviderActionDefinition.GetActionStateAsync`](https://docs.macro-deck.app/features/button-states/) |
 | `icon`, `icon.content` | [`IIconProviderActionDefinition`](https://docs.macro-deck.app/features/button-icons/) |
+
+`VariableInsertFormat` and `TemplatedItems` travel as the optional `variableInsertFormat` and
+`templatedItems` fields of a described parameter. A plugin that predates them sends neither and keeps the
+old behaviour.
 
 `PluginTestHarness.Actions` drives each operation the way the host does - see
 [Testing](https://docs.macro-deck.app/features/testing/).
@@ -1203,8 +1245,9 @@ reported a battery level, from `IIntegrationContext.CompanionDevices` alone (see
 [`CompanionBatteryProvider.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/host/src/MacroDeckHost.Integrations/Companion/Providers/CompanionBatteryProvider.cs).
 
 - **One device per Companion configuration.** The id is a hash of the configuration's id, stable across
-  reconnects and restarts, and the name is the configuration's title. An iPad is a `tablet` and an iPhone a
-  `phone`; the app reports no form factor, so an Android device is `other`.
+  reconnects and restarts, and the name is the configuration's title. The kind follows the device's
+  [`FormFactor`](https://docs.macro-deck.app/features/companion-devices/#what-a-device-reports): `tablet` or `phone`. A device without
+  one is a `tablet` when it is an iPad, a `phone` when it is an iPhone, and `other` otherwise.
 - **Events only.** It publishes when a device reports its state, connects or disconnects, and when
   configurations change. A disconnected device stays published as not connected until the integration
   stops; after a restart it returns once it connects and reports a level.
@@ -2172,6 +2215,7 @@ report, is `null`; percentages are 0 to 100 and texts at most 64 characters.
 | `Orientation` | `portrait` or `landscape` (`CompanionOrientations`). |
 | `ScreenBrightnessPercent` | The screen brightness. |
 | `Model`, `Platform`, `AppVersion` | The device model, its operating system with version (for example `Android 14`), and the Companion app version. |
+| `FormFactor` | `phone`, `tablet` or `desktop` (`CompanionFormFactors`), as the device declared it when it signed in. |
 | `InFocus` | Whether Macro Deck is in front on the device. |
 | `NetworkType` | `wifi`, `cellular`, `ethernet`, `vpn` or `none` (`CompanionNetworkTypes`). |
 | `NetworkMetered`, `NetworkValidated` | Whether the network is metered, and whether it reaches the internet. |
@@ -2332,7 +2376,8 @@ declaration non-fatally and creates no entries for your plugin.
 
 On a Macro Deck that predates this API, `Access` stays `Unsupported`, `Devices` stays empty, no event is
 raised, `SendAsync` and `WaitForDeviceAsync` answer `false`, and `RequestAsync` and
-`CaptureScreenshotAsync` fail with `NotConnected`. Nothing throws. An `IIntegrationContext` you implemented
+`CaptureScreenshotAsync` fail with `NotConnected`. Nothing throws. A Macro Deck that has the API but predates
+`FormFactor` leaves it `null`. An `IIntegrationContext` you implemented
 yourself against an older SDK, such as a test double, keeps compiling: `CompanionDevices` is a default
 interface member that returns `UnsupportedCompanionDeviceApi.Instance`, which behaves the same way. A
 plugin that uses Companion devices for an optional feature keeps working there with that feature off. Set
@@ -3640,6 +3685,7 @@ Things to know:
 | `Description` | Localized detail: what happened and what to do. | `Strings.Issues.WrongEndpointDescription()` |
 | `Severity` | `Info`, `Warning` (default) or `Error`. Colours the badge and orders the list. | `IntegrationIssueSeverity.Error` |
 | `ActionLabel` | Text of the resolve button. Leave it unset for an informational issue with no button. | `Strings.Issues.OpenSetup()` |
+| `HelpUrl` | A web page with more help, opened in the browser from a link button on the issue. Only an absolute `http` or `https` address is shown; Macro Deck drops any other value. A release from before `HelpUrl` ignores it. | `new Uri("https://example.com/download")` |
 
 An `Error` issue additionally raises one user notification when it first appears, linking to the
 integration. It notifies again only after it has gone away and come back.
@@ -3705,7 +3751,8 @@ var resolved = await harness.Issues.ResolveAsync(new IssueResolveArguments { Iss
 Issues are one provider-shaped `issues` capability per plugin. `list` and `resolve` are always live
 round trips - there is no snapshot - so an out-of-process `GetIssuesAsync` is called over the WebSocket
 on every poll, which is one more reason to keep it cheap. Severity and follow-up travel as their enum
-member names. See [capability parity](https://docs.macro-deck.app/reference/capability-parity/) and
+member names. `HelpUrl` travels as the optional `helpUrl` string of a listed issue; a plugin that predates it
+sends none, and a host that predates it ignores it. See [capability parity](https://docs.macro-deck.app/reference/capability-parity/) and
 [the WebSocket reference](https://docs.macro-deck.app/reference/websocket/#capabilities).
 
 ### See also
@@ -7397,6 +7444,37 @@ if (result.Status == UserVariableWriteStatus.NotFound)
 - In `MacroDeck.Plugin.Testing`, `ActionsTestClient.ExecuteWithContextAsync` runs a step inside a script or
   automation, and `FakeUserVariableApi` resolves script and automation locals and keeps the last context it
   was called with in `LastContext`.
+
+#### Reading a variable as a flow sees it
+
+`ReadInContextAsync` answers what `{{ vars.<name> }}` resolves to for a step running in a context: a
+script local, then an automation local, then a widget local, then a global. Integration and widget
+variables are found by their name like user variables. Script inputs are not part of the lookup. Every
+call is a live read; nothing is cached on the plugin's side.
+
+```csharp
+var read = await _userVariables.ReadInContextAsync(
+	"volume", UserVariableContext.From(context), context.CancellationToken);
+if (read.Status == UserVariableReadStatus.Found)
+{
+	// read.Value is a double for Numeric, a bool for Boolean and a string for Text and Color;
+	// read.Text is the value as a template renders it, e.g. "0.50" with two decimal places.
+}
+```
+
+| `UserVariableReadStatus` | Meaning |
+| --- | --- |
+| `Found` | `Type`, `Value` and `Text` are set. |
+| `NotFound` | No variable of that name is visible in the context. |
+| `InvalidName` | The name cannot be a variable name. |
+| `NotSupported` | The host does not implement reads: an `IUserVariableApi` implementation or a Macro Deck release that predates the method. |
+| `Unavailable` | The host could not be reached, or the variable exists but its owner has no value right now (a template shows it as unavailable). `Type` is set in the second case. Retry later. |
+
+The method is a default interface member, so an implementation written against an older SDK keeps
+compiling and answers `NotSupported`. Over the protocol it is the `user-variables` `read` operation with
+the same `name`, `ownerWidgetId`, `scriptId` and `automationId` fields as `apply`; a host that predates it
+answers `CAPABILITY_UNSUPPORTED`, which the SDK reports as `NotSupported`. `FakeUserVariableApi` reads
+the variables seeded on it along the same order.
 
 ## Video streams
 
