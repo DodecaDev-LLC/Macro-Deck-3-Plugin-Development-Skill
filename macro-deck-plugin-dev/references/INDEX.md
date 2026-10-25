@@ -115,6 +115,7 @@ Search everything: `grep -rn "<Type or term>" references/`.
 | `docs/creator-portal.md` | Creator Portal | Publish plugins and icon packs to the Macro Deck Store through the Creator Portal. | https://docs.macro-deck.app/creator-portal/ |
 | `docs/creator-portal.md` | Conformance report | What the conformance status of a build means, every warning the Creator Portal shows about it, and how to fix each one. | https://docs.macro-deck.app/creator-portal/conformance/ |
 | `docs/creator-portal.md` | Projects and Store listing | Create a Project in the Creator Portal and fill in the Store listing. | https://docs.macro-deck.app/creator-portal/projects/ |
+| `docs/creator-portal.md` | Public API | Read your Projects, their status and their analytics with an API token, for dashboards, badges and CI. | https://docs.macro-deck.app/creator-portal/public-api/ |
 | `docs/creator-portal.md` | Publish an icon pack | Create a version, upload the .macroDeckIconPack and submit it for review. | https://docs.macro-deck.app/creator-portal/publish-icon-pack/ |
 | `docs/creator-portal.md` | Publish a plugin | Connect a GitHub repository, add the release workflow, publish a GitHub release and submit the build for review. | https://docs.macro-deck.app/creator-portal/publish-plugin/ |
 | `docs/creator-portal.md` | Release workflow reference | Inputs, permissions and error responses of the Macro Deck plugin publishing workflow. | https://docs.macro-deck.app/creator-portal/release-workflow/ |
