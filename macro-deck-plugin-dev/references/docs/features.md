@@ -270,6 +270,12 @@ public IReadOnlyList<ActionParameter> Parameters { get; } =
 `Url`, `Icon`, `Image`, `KeyboardSequence`, `KeyboardCombo` and `WidgetTarget`. The executor reads
 values by `Name` from `context.Parameters`. The key names in `Hotkey`, `KeyboardCombo` and
 `KeyboardSequence` values are listed under [Keyboard combos](https://docs.macro-deck.app/features/events/#keyboard-combos).
+A secret the user picks for a `Secret` or `Password` parameter, also as a declared child of an `Object`
+or the item of an `Array`, arrives in `context.Parameters` as plaintext; no other parameter ever receives
+a decrypted secret. See [secret resolution in flows](https://docs.macro-deck.app/policies/compatibility/#secret-resolution-in-flows).
+A `KeyboardSequence` value arrives as a JSON string. The host renders each string value inside it as a
+template on its own, so a rendered value, such as event text, only ever becomes the content of that
+string and never adds, removes or changes steps.
 
 A `Color` parameter receives `#rrggbb`. The user can bind it to a
 [Color variable](https://docs.macro-deck.app/features/variables/#color-variables); the host resolves it when the action runs and drops
@@ -6177,6 +6183,9 @@ return ConfigFlowResult.Complete(title, new Dictionary<string, ConfigFlowValue>
 - `Complete` can add values the user never saw, such as tokens from an OAuth exchange. `Secret` values are
   encrypted, `Plain` values stored as they are. A secret with an empty value is skipped.
 - Secrets never belong in logs or in user-visible errors - log the failure type, not the value.
+- A client submits a secret as plaintext. A submitted `{ "$secret": "<id>" }` is refused unless it is the
+  reference the reconfigured entry already stores under the same key, so a flow can never be handed a
+  secret that belongs to something else.
 
 ### Reading the entry at runtime
 
@@ -6222,7 +6231,9 @@ return ConfigFlowResult.Complete("Example", new Dictionary<string, ConfigFlowVal
 
 Macro Deck owns the redirect endpoint and matches the callback to your flow through `State`. You build the
 provider's authorize URL and exchange the code; `AuthorizationCode` is `null` until the callback has
-arrived. Show `RedirectUri` as a copy value when the user has to register it with the provider. Do not
+arrived. Each `External` result accepts one code: the first callback that carries one sets
+`AuthorizationCode`, and later callbacks with the same `State` are ignored until the flow returns `External`
+again. A callback that only reports an error leaves it `null`. Show `RedirectUri` as a copy value when the user has to register it with the provider. Do not
 start your own callback listener. The built-in Spotify integration is a complete example.
 
 A flow that talks to the service while it runs, to test a connection or exchange a code, should send the

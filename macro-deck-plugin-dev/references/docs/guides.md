@@ -432,6 +432,9 @@ installed 1.0.0  <  Store 1.1.0  ->  shown as an update
   when either version fails to parse.
 - An update is only reported to the user. It is never installed unsigned on their behalf. Once a plugin is
   installed as signed, an unsigned update to it is refused, even if the user consents.
+- An update signed for another publisher than the installed version is refused from every source, the Store
+  included. See
+  [signing](https://docs.macro-deck.app/policies/security/#signing-the-creator-portal-signs-and-the-host-verifies-before-install-and-before-every-load).
 - The host verifies every package before install and again before every launch. Editing files after
   installation stops the plugin from loading.
 
@@ -953,6 +956,15 @@ not verify is never treated as unsigned, so no confirmation installs it.
 `UnsignedNotPermitted`. Unsigned packages install only with an explicit per-install confirmation, for a file
 you selected or uploaded - never from a store or registry. A plugin id previously admitted as signed never
 accepts an unsigned package. Install from a local file and confirm, or install a signed build.
+
+#### An update is refused with SignerMismatch
+
+`SignerMismatch` (`signer_mismatch` over HTTP). The package verifies, but its certificate was issued to a
+different subject (`subject.kind` and `subject.id`) than the installed version that was admitted as signed.
+A rotated certificate of the same publisher is accepted; a different publisher is not, from any source,
+the Store included. After a Creator Portal transfer of a signed plugin, installed copies refuse the new
+publisher's releases until the plugin is uninstalled and reinstalled. See
+[signing](https://docs.macro-deck.app/policies/security/#signing-the-creator-portal-signs-and-the-host-verifies-before-install-and-before-every-load).
 
 #### A plugin that used to work now refuses to launch
 
