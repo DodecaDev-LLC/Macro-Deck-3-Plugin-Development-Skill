@@ -35,6 +35,7 @@ under [behaviour changes that moved no version](https://docs.macro-deck.app/ui/r
 | Analyzer diagnostic ids | `MDP1001`, …, the `MDLOC` family `MDLOC001`-`MDLOC008` | An id keeps its meaning and is never reused - see [analyzers](https://docs.macro-deck.app/reference/analyzers/). |
 | Conformance check ids | `MDC0305`, … | Stable, so you can gate CI on them - see [conformance](https://docs.macro-deck.app/reference/conformance/). |
 | Plugin `.resx` contract | the default-language file, `Strings.<culture>.resx`, named placeholders, the bracketed parameter type in a `<comment>` | A plugin's `Localization/*.resx` keeps compiling - see [Localization](https://docs.macro-deck.app/features/localization/). |
+| MCP tool contract | `macrodeck-mcp/1`: tool names, argument names, result fields, error codes | Additive-only within the contract version - see [the MCP server reference](https://docs.macro-deck.app/reference/mcp/). |
 | Macro Deck's localization catalog | `macrodeck:Common.Save`, … exposed as `MacroDeckStrings` | **Additive-only**: a shipped key is never deleted outright. |
 
 Retiring a catalog key follows the same idea as [SDK deprecation](https://docs.macro-deck.app/policies/deprecations/): the key
@@ -977,6 +978,7 @@ or shipped but not implemented, is stated as such.
 | Plugin process | Scope `plugin`: the plugin protocol surface, and nothing else | Not sandboxed: it runs with the user's full privileges. Declared permissions are [not enforced](#permissions-declared-not-enforced), except `host:adb`, `host:companion-devices` and `host:desktop-notifications` |
 | Deck clients (web client, companion) | Scope `client`: the viewer-safe endpoints | Plugin endpoints refuse them |
 | LAN callers and browsers | The public listener's API and web client | Every plugin endpoint refuses them |
+| MCP clients (AI assistants) | Scope `mcp`: the tools of [the MCP server](https://docs.macro-deck.app/reference/mcp/), on the public and the loopback listener | Never a secret value; see [MCP clients](#mcp-clients) |
 | Creator Portal and Store | Signing Store plugins after checking the publishing workflow's provenance; publishing the signed registry and its revoked keys | Revocation refuses new installs and updates, not a plugin that is already installed |
 
 ### Network exposure
@@ -1146,6 +1148,21 @@ var apiKey = await context.Config.GetSecretAsync(entry.Id, "api_key");
 See [setup flows](https://docs.macro-deck.app/features/setup-flows/#secrets) and
 [ADR 0047](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/engineering/decisions/0047-secrets-backups-and-restore.md).
 
+### MCP clients
+
+An AI client connected to [the MCP server](https://docs.macro-deck.app/reference/mcp/) is treated as an untrusted writer, not as the
+user:
+
+- Its token opens only `/mcp`, and never an admin, client or plugin endpoint. `/mcp` is also served on
+  the public listener so clients on other computers in the network can connect; the token is the only
+  credential there, sent over plain HTTP. Browser pages are refused by the `Origin` checks.
+- No tool returns a secret value. Secrets appear as `{"$secret":"<id>"}` references, and a new secret is
+  typed by the user into a one-time Macro Deck page, never into the client.
+- An action that asks first is confirmed by the user in the client's own dialog or, for a client that can
+  only open links, on a one-time Macro Deck confirmation page with the same `Origin`, one-time and
+  expiry rules as the secret page.
+- Revoking the token in **Settings > AI clients** cuts off its open requests and sessions immediately.
+
 ### Signing and install trust
 
 Check an artifact yourself, or in CI, before it reaches a host:
@@ -1205,7 +1222,7 @@ The host resolves a package to exactly one verdict:
 | Certificate, or the issuer that signed it, revoked by the Store registry | `Revoked` | Yes, at install and update only |
 | Package unreadable, or algorithm unknown to this host | `VerificationUnavailable` | Yes |
 
-**`Unsigned` is the only verdict a confirmation can admit**, because nothing published today is signed yet:
+**`Unsigned` is the only verdict a confirmation can admit**, so you can still install your own builds and packages from outside the Store:
 
 | Source of an unsigned plugin | Installs? |
 | --- | --- |
