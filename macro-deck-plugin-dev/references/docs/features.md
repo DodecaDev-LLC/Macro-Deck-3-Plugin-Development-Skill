@@ -2490,6 +2490,32 @@ move only that client. A folder or profile that no longer exists is ignored.
 
 `GetFolders()` and `GetProfiles()` return what a folder or profile picker should offer.
 
+### Folders
+
+`GetFolders()` lists every folder of every stored profile, sorted by label. Folders of a virtual profile
+that an integration provides are not listed. Each `DeckFolder` also says where it sits in its profile's
+folder tree, so you can walk the folders the way Macro Deck shows them:
+
+| Member | Meaning |
+| --- | --- |
+| `Id` | The id to pass to `ChangeFolderAsync`. |
+| `Label` | What a picker shows. With more than one profile it is prefixed with the profile name. |
+| `ProfileId` | The profile the folder belongs to. |
+| `ParentId` | The folder it is nested in, or `null` for a top-level folder. A parent is always in the same profile. |
+| `Order` | Its place among the folders that share its parent: lower comes first. A sort key, not a contiguous index; equal values are ordered by `Id`. |
+
+```csharp
+// The folders of the profile a client has open, in the order the folder tree shows them.
+IEnumerable<DeckFolder> Tree(IReadOnlyList<DeckFolder> folders, DeckClient client, string? parentId = null)
+{
+	return folders
+		.Where(f => f.ProfileId == client.ProfileId && f.ParentId == parentId)
+		.OrderBy(f => f.Order)
+		.ThenBy(f => f.Id, StringComparer.Ordinal)
+		.SelectMany(f => Tree(folders, client, f.Id).Prepend(f));
+}
+```
+
 ### Where each client is
 
 There is no single "current folder": two devices can show different folders of the same profile.
@@ -2568,6 +2594,9 @@ In a plugin, client positions arrive with the deck state the host pushes, not as
 `IDeckNavigator` against an older SDK still compiles and loads. Against a host that predates client
 positions, `GetClients()` returns an empty list and `ClientChanged` never fires. The wire format is
 described in the [protocol reference](https://docs.macro-deck.app/reference/protocol/).
+
+`ProfileId`, `ParentId` and `Order` on `DeckFolder` are `null` from a host that predates them. They are
+optional properties, so code that creates a `DeckFolder` with only `Id` and `Label` still compiles.
 
 ## Device providers
 
@@ -7988,7 +8017,7 @@ public sealed class StreamKitIntegration : IPluginIntegration, IProfileProvider
 
 	public Task HandleWidgetInteractionAsync(string profileId, string folderId, string widgetId,
 		WidgetInteraction interaction)
-		=> widgetId == "go-live" && interaction.TriggerType == "press"
+		=> widgetId == "go-live" && interaction.TriggerType == "onShortPress"
 			? _stream.GoLiveAsync()
 			: Task.CompletedTask;
 
@@ -8001,12 +8030,14 @@ integration.
 
 Things to know:
 
-- **Ids are local.** The host prefixes profile, folder and widget ids as `integrationId::localId`. Don't
-  use `::` in your ids, or the profile, folder or widget is skipped.
+- **Ids are local.** You choose profile, folder and widget ids, and the host hands them back to you as
+  they are. A widget id only has to be unique within its folder, so the same id can appear in every
+  folder. Don't use `::` in your ids, or the profile, folder or widget is skipped.
 - **Interactions are routed to you, not executed.** Virtual widgets aren't stored by the host, so a
-  trigger on one reaches `HandleWidgetInteractionAsync`. The default implementation does nothing.
-- **Don't rely on `profileId`.** The host currently passes an empty string. Identify the widget by
-  `folderId` and `widgetId`, which arrive as your local ids.
+  trigger on one reaches `HandleWidgetInteractionAsync` with your local `profileId`, `folderId` and
+  `widgetId`. The default implementation does nothing.
+- **Tiles draw from your data.** A virtual widget renders from its `Data` exactly as a stored widget of
+  the same type and data does.
 
 ### Describing a profile
 
@@ -8025,13 +8056,26 @@ Things to know:
 JSON payload a stored widget of that type carries. A type whose provider hasn't connected yet is passed
 through unchanged rather than becoming a button, so it appears once that provider is available.
 
+A virtual widget has no stored widget behind it, so anything that belongs to a stored widget does not
+apply: widget-scoped variables, a slider's own default value variable (bind a slider to a variable with
+`valueVariable`), and a countdown's or stopwatch's running state (they show their idle face). A label
+template such as `{{ vars.volume }}` resolves global variables and follows them as they change.
+
+#### Widget ids on the wire
+
+Clients, device providers and plugin-provided widget types see a virtual widget under an id the host
+composes from the integration, profile, folder and widget ids, in the form `integrationId::localId`.
+Treat that id as opaque: don't parse it or build one yourself, and pass it back unchanged where you
+received it. The composed local part may be at most 256 characters, so keep profile, folder and widget
+ids short; a widget whose composed id is longer is skipped and logged.
+
 ### Handling interactions
 
 ```csharp
 public async Task HandleWidgetInteractionAsync(string profileId, string folderId, string widgetId,
 	WidgetInteraction interaction)
 {
-	if (interaction.TriggerType != "press")
+	if (interaction.TriggerType != "onShortPress")
 	{
 		return;
 	}
@@ -8048,16 +8092,21 @@ public async Task HandleWidgetInteractionAsync(string profileId, string folderId
 }
 ```
 
-`TriggerType` uses the action button's trigger names, such as `"press"` and `"release"`. The host routes
-action button triggers on a virtual widget here. A trigger for a widget id that isn't yours, or from a
-disabled integration, reports a failed trigger to the client.
+`TriggerType` uses the widget trigger names, such as `"onShortPress"`, `"onLongPress"` and
+`"onDoublePress"`. Every route uses the same names: a deck tile, a plugin-provided device and the REST
+API. A press or long press on a virtual Action Button, Countdown or Stopwatch, and a double press on a
+virtual Slider, is routed here instead of running flows, and so is a trigger on any other widget type. A trigger for a widget id that isn't yours, or from a disabled integration, reports a
+failed trigger to the client.
 
 ### Changing the profiles
 
 `GetProfiles` is read every time the host lists profiles or opens a virtual folder, so returning a new
 list is enough in process. Keep it cheap and side-effect free, and build it from state you already hold.
 An out-of-process plugin must tell the host to read it again with
-`CatalogChanged(CapabilityKinds.VirtualProfiles)` on an injected `IPluginCatalogNotifier`.
+`CatalogChanged(CapabilityKinds.VirtualProfiles)` on an injected `IPluginCatalogNotifier`. Tiles that are
+open on a deck then redraw from the new data of their widget, and a tile whose widget you removed stops
+drawing. A widget you added appears the next time the deck loads the folder. An in-process provider has
+no change signal, so its open tiles keep their data until the deck reloads.
 
 ### Edge cases
 
