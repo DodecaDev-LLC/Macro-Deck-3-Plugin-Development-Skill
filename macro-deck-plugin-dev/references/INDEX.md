@@ -76,7 +76,7 @@ Search everything: `grep -rn "<Type or term>" references/`.
 | `docs/ui-components.md` | Progress | Draws a moving playback position as a bar or a time readout, advanced by the reader's own clock. | https://docs.macro-deck.app/ui/components/progress/ |
 | `docs/ui-components.md` | Range bar | A read-only horizontal track with one gradient-filled span and an optional point marker. | https://docs.macro-deck.app/ui/components/range-bar/ |
 | `docs/ui-components.md` | Responsive | Different layouts for different box sizes - a widget at 1x1, 2x1 or 1x2, a folder view on a phone or a tablet - chosen by the reader without a round-trip. | https://docs.macro-deck.app/ui/components/responsive/ |
-| `docs/ui-components.md` | Segmented | A row of segments the user chooses one of, reporting the chosen index. | https://docs.macro-deck.app/ui/components/segmented/ |
+| `docs/ui-components.md` | Segmented | A row or column of segments the user chooses one of, reporting the chosen index. | https://docs.macro-deck.app/ui/components/segmented/ |
 | `docs/ui-components.md` | Shape | A filled and stroked rectangle, rounded rectangle, circle, capsule or path, drawn from the tree alone. | https://docs.macro-deck.app/ui/components/shape/ |
 | `docs/ui-components.md` | Slider | A draggable level on a rounded track, the interactive counterpart of the range bar. | https://docs.macro-deck.app/ui/components/slider/ |
 | `docs/ui-components.md` | Stack and layer | A stack lays children beside each other along one axis; a layer draws them on top of each other. | https://docs.macro-deck.app/ui/components/stack-and-layer/ |
