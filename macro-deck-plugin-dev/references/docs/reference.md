@@ -3033,6 +3033,10 @@ the values are in
 [`ProtocolErrorReasons.cs`](https://github.com/Macro-Deck-App/Macro-Deck/blob/main/protocol/src/MacroDeck.Plugin.Protocol/Errors/ProtocolErrorReasons.cs).
 A client that does not recognise a reason handles the code alone.
 
+When the host fails while handling a `host.invoke`, `host.cancel`, `event.publish`, `capability.declare`,
+`state.update` or `asset.*` message, it answers `INTERNAL_ERROR` correlated to that message and goes on
+with the next one; the session stays open. A failed `log.publish` gets no such answer.
+
 Closing the socket is reserved for seven conditions; everything else is a `protocol.error` on an open
 socket:
 
@@ -3280,6 +3284,26 @@ var result = reader.Read("manifest.json", expectedPluginId: "com.example.hue-lig
 if (!result.Success) Console.WriteLine($"{result.Error}: {result.ErrorMessage}");
 ```
 
+`IPluginArtifactReader.Inspect` and `ExtractTo` report a file that cannot be opened as a ZIP as
+`InvalidArchive`. An archive that opens but holds an entry whose compressed data is corrupt is found
+only while that entry is read, and then they throw `InvalidDataException` instead of returning a
+result. Treat that exception as `InvalidArchive` too. After a throw from `ExtractTo`, the files it already
+extracted stay in the target directory, and cleaning them up is your job:
+
+```csharp
+IPluginArtifactReader artifacts = new PluginArtifactReader(new PluginManifestReader(), logger);
+try
+{
+    var extracted = await artifacts.ExtractTo("HueLights.macroDeckPlugin", targetDirectory);
+    if (!extracted.Success) Console.WriteLine($"{extracted.Error}: {extracted.ErrorMessage}");
+}
+catch (InvalidDataException exception)
+{
+    Directory.Delete(targetDirectory, recursive: true);
+    Console.WriteLine($"{PluginInstallError.InvalidArchive}: {exception.Message}");
+}
+```
+
 #### `MacroDeck.Plugin.Protocol`
 
 ```csharp
@@ -3455,7 +3479,7 @@ sequenceDiagram
     P->>H: host.invoke (optional, while handling)
     H->>P: host.result
     P->>H: capability.result
-    P-->>H: event.publish / log.publish / state.update (fire-and-forget)
+    P-->>H: event.publish / log.publish / state.update (no reply unless refused)
     P->>H: session.ping (every 20s, either side)
     H->>P: session.pong
     P->>H: session.goodbye, then close
@@ -4331,7 +4355,8 @@ same rule as the `deck` push. A host without this api never pushes it and answer
  "payload":{"eventId":"light-toggled","parameters":{"on":true}}}
 ```
 
-All three are plugin → host and **fire-and-forget** - no reply message.
+All three are plugin → host and **fire-and-forget**: no reply message, unless the host refuses one with a
+`protocol.error` correlated to it (see the refusals below the table).
 
 | Type | Field | Type | Required | Meaning |
 | --- | --- | --- | --- | --- |
@@ -4342,6 +4367,17 @@ All three are plugin → host and **fire-and-forget** - no reply message.
 | `state.update` | `kind` | string | yes | The kind whose snapshot is stale - re-describe it. Not data-carrying. |
 | | `localId` | string | no | The capability that changed. For `email-inbox`, the inbox whose content or status changed - see [`email-inbox`](#email-inbox). |
 | | `reason` | string | no | Diagnostic reason. |
+
+Refusals, each a `protocol.error` correlated to the refused message:
+
+- `event.publish` with a number anywhere in `parameters` (nested objects and arrays included) that
+  falls outside the range of a 64-bit float, such as `1e400`: `INVALID_PAYLOAD`, and the event is not
+  published. JSON has no `NaN` or `Infinity` literal, so this is how an infinite value would arrive. Every
+  protocol major gets this answer; a host before Macro Deck 3.1 published the value as infinity.
+- `log.publish` with more than 64 events: `PAYLOAD_TOO_LARGE`. The first batch over the log rate limit:
+  `RATE_LIMITED`.
+- `event.publish` or `state.update` the host failed to handle: `INTERNAL_ERROR`, see
+  [Errors](https://docs.macro-deck.app/reference/protocol/#errors).
 
 Built from the schema:
 
