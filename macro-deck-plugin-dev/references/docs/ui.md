@@ -147,6 +147,10 @@ UiEventHandler.On(UiComponentEvents.Reveal, e =>
 unvalidated client data, so a getter for the wrong JSON kind returns `false` rather than throwing. Read state
 with `Peek()` inside a handler so the handler does not subscribe to it.
 
+An explicit JSON `null` and a missing payload are different: `null` arrives as a `Raw` element of kind
+`Null`, a missing payload as a `null` `Raw`. A `change` carrying `null` clears an input whose value type can
+be null, such as a `UiStringInput` or a `UiIconReferenceInput`; a `change` without a payload is refused.
+
 ### Declining an event
 
 ```csharp
@@ -1247,6 +1251,7 @@ against it.
 | A colour with alpha, stored as `rgba(...)` or `#rrggbbaa`, is drawn translucent on the deck and in the widget editor | Released after 3.0.0-beta.15 | A widget appearance patch or stored widget data with such a colour, which used to be drawn opaque, now lets the tile face show through. Send `#rrggbb` to keep a colour opaque. Device surfaces still receive opaque `#rrggbb`. |
 | The Slider and History Graph widgets have colour thresholds: while a widget's `thresholdsEnabled` is on, the band its value falls in picks its colour | Released after 3.0.0-beta.15 | A `WidgetAppearanceProperty.AccentColor` patch on such a widget is still stored and acknowledged, but has no visible effect until the user turns the thresholds off. |
 | A Weather widget's default press runs the details action its station's provider declares through `IWeatherProvider.DetailsAction`, instead of always running the built-in Weather integration's **Weather details** action | Released after 3.0.0-beta.16 | A weather plugin built against an older SDK declares no details action, so pressing a widget that shows one of its stations runs nothing until the user adds a flow; a flow the user added still runs. See [Pressing the widget](https://docs.macro-deck.app/features/weather/#pressing-the-widget). |
+| A UI event whose payload is an explicit JSON `null` reaches an out-of-process plugin as a `Null` element in `UiEvent.Data` and `UiEventData.Raw`, instead of as no payload. A `change` with `null` therefore clears an input whose value type can be null | SDK released after 3.0.1 | A plugin rebuilt on this SDK sees the same payload a built-in integration always saw, and a cleared `UiStringInput` or `UiIconReferenceInput` keeps its cleared value. A handler that checked `Raw is null` to detect a `null` payload checks `ValueKind` instead. A plugin built on an older SDK keeps refusing such a `change` until it is rebuilt; the host sends the same bytes either way. See [Reading the payload](https://docs.macro-deck.app/ui/concepts/events/#reading-the-payload). |
 
 ## Patches
 
