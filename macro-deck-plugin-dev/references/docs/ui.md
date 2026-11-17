@@ -252,7 +252,8 @@ The thresholds and which of two nested nodes gets a gesture are on [Modifier](ht
 and the pointer family's rules on [Pointer streams and taps](https://docs.macro-deck.app/ui/components/modifier/#pointer-streams-and-taps).
 
 Configuration inputs use `change` from `UiConfigEvents`. An action list that lets the user adopt a provider
-action also raises `provide`; see [Widget configuration](https://docs.macro-deck.app/ui/views/widget-configuration/#letting-the-user-adopt-a-provider-action). See the [component reference](https://docs.macro-deck.app/ui/components/) for
+action also raises `provide`; see [Widget configuration](https://docs.macro-deck.app/ui/views/widget-configuration/#letting-the-user-adopt-a-provider-action). A
+[collapsible section](https://docs.macro-deck.app/ui/views/configuration/#collapsible-sections) raises `reset` when the user asks for its defaults. See the [component reference](https://docs.macro-deck.app/ui/components/) for
 each component's geometry and semantics, and [Modal views](https://docs.macro-deck.app/ui/views/modal/) for `modal.complete`, the one
 event that is not a component interaction but the answer that ends a dialog.
 
@@ -1208,6 +1209,7 @@ profile's rule decides which of the two a new feature is. [Modifiers](https://do
 | `page` | A surface kind | Has no page tab, so never opens one. See [Integration pages](https://docs.macro-deck.app/ui/views/page/). |
 | `split` (`UiSplit`), `list` (`UiConfigList`), `list-item` (`UiConfigListItem`) and `empty-state` (`UiEmptyState`) | Configuration types | Declines each one and draws the node's explicit `fallback`; without one, nothing. No fallback is invented for you. See [Page layout](https://docs.macro-deck.app/ui/views/configuration/#page-layout). |
 | `railTitle` on `split`; `label`, `description`, `icon`, `badge`, `severity` and `selected` on `list-item`; `icon`, `title` and `text` on `empty-state` | Properties of the new types | Only a reader that knows the types reads them. |
+| `section` (`UiConfigSection`), its `modified` and `memoryKey` properties, and the `reset` config event | A configuration type, properties and an event name | Declines the type and draws the node's explicit `fallback`; without one, nothing. Never sends `reset`. See [Collapsible sections](https://docs.macro-deck.app/ui/views/configuration/#collapsible-sections). |
 | `variant` and `iconWithLabel` on `button` | Properties | Ignores them and draws an ordinary button, icon-only when it has an `icon`. |
 | `align`, `gap` and `variant` (`card`) on `stack` | Properties | Ignores them and draws a plain stack, packed at the start with the usual spacing; an `accent` on it then keeps its old meaning. |
 | `badge` on `heading` | A property | Ignores it and draws the caption alone. |

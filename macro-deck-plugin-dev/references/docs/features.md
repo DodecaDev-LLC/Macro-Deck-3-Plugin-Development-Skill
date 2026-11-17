@@ -9,6 +9,7 @@ Contents:
 - Android devices: https://docs.macro-deck.app/features/android-devices/
 - Batteries: https://docs.macro-deck.app/features/batteries/
 - Button icons: https://docs.macro-deck.app/features/button-icons/
+- Button labels: https://docs.macro-deck.app/features/button-labels/
 - Button states: https://docs.macro-deck.app/features/button-states/
 - Calendars: https://docs.macro-deck.app/features/calendars/
 - Companion devices: https://docs.macro-deck.app/features/companion-devices/
@@ -56,6 +57,7 @@ public sealed class ObsIntegration : IPluginIntegration, IVariableProvider, IEve
 | [Actions](https://docs.macro-deck.app/features/actions/) | `IActionDefinition`, `IActionExecutor` | Do something when a button is pressed or a flow runs. |
 | [Button states](https://docs.macro-deck.app/features/button-states/) | `IStateProviderActionDefinition` | Show on/off, muted, recording and similar states on a button. |
 | [Button icons](https://docs.macro-deck.app/features/button-icons/) | `IIconProviderActionDefinition` | Draw album art, avatars or weather imagery on a button. |
+| [Button labels](https://docs.macro-deck.app/features/button-labels/) | `WidgetAppearancePatch.LabelNumber` | Change one of a button's up to four labels. |
 
 ### Data
 
@@ -1608,6 +1610,78 @@ Test both with `PluginTestHarness.Actions.GetActionIconAsync(localId, parameters
 - [Capability parity: the icon-poll window](https://docs.macro-deck.app/reference/capability-parity/#the-icon-poll-window)
 - [Devices: fetching a provider-controlled icon](https://docs.macro-deck.app/features/devices/#fetching-a-provider-controlled-icon)
 
+## Button labels
+
+> Source: https://docs.macro-deck.app/features/button-labels/
+>
+> Change one of an action button's labels from a plugin with WidgetAppearancePatch.LabelNumber, and read every label a device has to draw.
+
+An action button can carry up to four labels. The first is its primary label, the one a button has always
+had; the user adds the others in the button editor's **Label** tab. Each label has its own text, font,
+size, colour and position.
+
+### Quick start
+
+```csharp
+await context.Widgets.ApplyAsync(new WidgetAppearanceRequest
+{
+	WidgetId = widgetId,
+	Patch = new WidgetAppearancePatch { LabelNumber = 2, Label = "{{ vars.cpu }} %", LabelColor = "#ef4444" },
+});
+```
+
+`LabelNumber` names the label a patch changes: `1` is the primary label, `2` to `4` are the extra labels
+in the order the editor lists them. Leave it unset to change the primary label, as every patch did
+before.
+
+### What a numbered patch changes
+
+- **It moves the label fields only:** `Label`, `LabelColor`, `FontFaceId`, `FontSize`, `TextAlign` and
+  `LabelPosition`. Background, icon, border and accent colour belong to the button and ignore the number.
+- **`TextAlign` and `LabelPosition` are preset positions.** A label sits at a free position between 0 and
+  100 percent on each axis; `left`, `center`, `right` and `top`, `center`, `bottom` are 0, 50 and 100.
+  Setting one replaces whatever free position the user chose on that axis, and clearing `Font` returns
+  the label to the centre.
+- **Clearing follows the number too.** `ClearProperties` with `Label`, `LabelColor` or `Font` resets that
+  label. Clearing a label the button does not have changes nothing.
+- **A label that does not exist yet is created**, together with any before it, with no text. A patch
+  that only colours label 3 therefore leaves an invisible label behind, which the user sees in the
+  editor's list.
+- **A number outside `1` to `4` rejects the whole request** and `ApplyAsync` returns `false`.
+- **In state mode the label belongs to the targeted state.** Every state has its own extra labels and
+  never shows the button's or another state's. `StateIds` picks the states as for any other patch.
+- **Text is a template like the primary label's.** Each label is rendered on its own, so one that cannot
+  be shown displays `n/v` while the others stay as they are.
+- **Other widget types ignore the number.** They have the one label.
+- **An older Macro Deck ignores `LabelNumber` and changes the primary label.** Nothing tells a plugin
+  which kind of host it is talking to, so send a numbered patch only where overwriting the primary label
+  would be acceptable.
+
+The **Set Label**, **Set Label Color** and **Set Font** actions offer the same choice to users as **Label
+to change**.
+
+### On a device
+
+A device provider receives the labels resolved: `DeviceSurfaceAppearance.Label` for the primary one,
+`ExtraLabels` for the others, and `LabelX`/`LabelY` for the primary label's free position. See
+[Devices](https://docs.macro-deck.app/features/devices/#receiving-and-rendering-a-session).
+
+### Over the plugin protocol
+
+| Wire field | SDK member |
+| --- | --- |
+| `labelNumber` on the `widgets` appearance patch | `WidgetAppearancePatch.LabelNumber` |
+| `labelX`, `labelY`, `extraLabels` on the `devices` surface appearance | `DeviceSurfaceAppearance.LabelX`, `LabelY`, `ExtraLabels` |
+
+All four are optional and additive within protocol major `3`; see the
+[protocol change log](https://docs.macro-deck.app/reference/protocol/).
+
+### See also
+
+- [Button states](https://docs.macro-deck.app/features/button-states/) and [Button icons](https://docs.macro-deck.app/features/button-icons/)
+- [Devices](https://docs.macro-deck.app/features/devices/)
+- [Compatibility](https://docs.macro-deck.app/policies/compatibility/)
+
 ## Button states
 
 > Source: https://docs.macro-deck.app/features/button-states/
@@ -1785,6 +1859,7 @@ A `state.update` for the actions kind only brings the next read forward. Test it
 
 - [Actions](https://docs.macro-deck.app/features/actions/)
 - [Button icons](https://docs.macro-deck.app/features/button-icons/) - a separate capability; enabling one never enables the other
+- [Button labels](https://docs.macro-deck.app/features/button-labels/) - each state has its own extra labels
 - [Capability parity](https://docs.macro-deck.app/reference/capability-parity/#the-state-poll-window)
 - [Localization](https://docs.macro-deck.app/features/localization/)
 
@@ -2771,6 +2846,20 @@ device stays registration-only forever.
   byte for byte.
 - **`Widgets`** holds every widget in the folder plus any foreign pinned widget whose scope reaches it, each
   once. Labels are already resolved and localized - render them as-is.
+- **An Action Button can carry up to three more labels.** `Appearance.Label` is its primary label and
+  `Appearance.ExtraLabels` holds the others in drawing order, each a `DeviceSurfaceLabel` with its own
+  resolved `Text`, `Color`, `FontSize` and position `X`/`Y`. `Appearance.LabelX`/`LabelY` carry the
+  primary label's position once the widget stores one, which is the case after any save in the editor,
+  and are null for a widget that only stores an alignment.
+  - A position is a percentage of the button's content box: `0` is flush left or top, `50` centered,
+    `100` flush right or bottom. At `X = 25` a quarter of the free space is left of the label, so a label
+    never leaves the box.
+  - For the primary label, `TextAlign` and `LabelPosition` always name the third of the box the position
+    falls in (`left`, `center`, `right` and `top`, `center`, `bottom`), so a provider that draws it at nine
+    places only can keep using them. An extra label carries `X`/`Y` alone.
+  - The list is empty for every other widget and for a button without extra labels. A provider built
+    against an SDK that predates these members never sees them and draws the primary label at
+    `TextAlign`/`LabelPosition`, as before; nothing else about the surface changes.
 - **A widget with a transparent background arrives without one.** When the user makes a widget's
   background transparent, its `Appearance.BackgroundColor` is null, the same as a widget with no colour of
   its own: draw the folder background behind that key, or your own default where there is none.
