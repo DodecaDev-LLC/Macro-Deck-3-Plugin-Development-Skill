@@ -2125,9 +2125,12 @@ and writes the responses and server requests (elicitations included) to stdout. 
 - When the session is lost (the host restarted, also on another port), it re-initializes with the
   client's original `initialize` and replays a request only when it provably never reached the host. A
   request that was in flight is answered with a JSON-RPC error instead, so a tool call never runs twice.
+- Instead of `MACRODECK_MCP_TOKEN`, `MACRODECK_MCP_TOKEN_ID=<token id>` makes it read the token from the
+  operating system's credential store, where Macro Deck saved it for the Claude Desktop extension.
+  `MACRODECK_MCP_TOKEN` wins when both are set.
 - Without a host, with a rejected token (`401`) or while `/mcp` is unavailable (`404`), every request
-  gets a JSON-RPC error that says so, in the operating system's language. Without `MACRODECK_MCP_TOKEN`
-  it exits with status 2.
+  gets a JSON-RPC error that says so, in the operating system's language. Without either variable, or
+  when no token is stored for that id, it exits with status 2.
 - For development, a host started without the desktop app can be reached by setting both
   `MACRODECK_HOST_PORT` and `MACRODECK_LOOPBACK_SECRET_FILE` (a file holding that host's loopback secret).
   The pair is honoured only because the environment comes from the user's own client configuration, and
@@ -2136,11 +2139,23 @@ and writes the responses and server requests (elicitations included) to stdout. 
 
 **Download for Claude Desktop** in **Settings > AI clients** builds a
 [Claude Desktop Extension](https://github.com/modelcontextprotocol/mcpb) (`.mcpb`, manifest version 0.3)
-of type `binary` that runs this bridge from the installed app, with the new token in its `env`. It is
-offered on macOS and Windows when the host was started by the installed desktop app. The admin endpoint
-behind it is `POST /api/mcp/tokens/{id}/claude-desktop-extension` with `{ "token": "<plaintext>" }`;
-it answers `application/zip`, or the settings' JSON error body with `invalid_token`, `token_revoked` or
-`extension_unavailable`. `GET /api/mcp/endpoint` reports whether it is offered in `extensionAvailable`.
+of type `binary`, with the Macro Deck icon, that runs this bridge from the installed app. Its `env` holds only
+`MACRODECK_MCP_TOKEN_ID`; the token itself never goes into the file. It is offered on macOS and Windows
+when the host was started by the installed desktop app, and not in a portable installation. The admin
+endpoint behind it is `POST /api/mcp/tokens/{id}/claude-desktop-extension` with
+`{ "token": "<plaintext>" }`; it answers `application/zip`, or the settings' JSON error body with
+`invalid_token`, `token_revoked`, `extension_unavailable` or `secure_store_unavailable`.
+`GET /api/mcp/endpoint` reports whether it is offered in `extensionAvailable`.
+
+Before it answers, the host has the desktop app's executable save the token: on macOS as a generic
+password in the login keychain, never synchronized, created by that executable so the bridge reads it
+without a prompt; on Windows as a local-machine generic credential in Credential Manager, its value
+additionally DPAPI-protected for the current user. The entry is keyed by the token id and per build
+channel, so downloading again for the same token replaces it. `mcp-token store|delete <id>` is the
+host's internal call for this, not an interface for clients. Revoking or deleting the token deletes
+the entry. Nothing else does: an entry stays for every token whose extension was downloaded (even if the
+file was never saved or the extension was removed) until that token is revoked, and when the token
+disappears without a revoke, for example through a backup restore.
 
 ### Browser and DNS-rebinding protection
 
@@ -3812,7 +3827,7 @@ APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `no
 | `ui` | Not charged to the per-plugin callback throttle, except `origin.report-failure`, `origin.show-modal`, `origin.open-url` and `origin.read-upload`, which are charged like any other callback. `snapshot`, `patch` and `fault` are bounded per session by `maxUiUpdatesPerSecond` / `maxUiUpdateBurst`; `report-parameter-values` is bounded by `maxUiTreeBytes` per call and relayed only for an action configuration session; `reload` ends its session, and one for a session that already ended is ignored; `register-resource`, `remove-resource` and `register-music-player-artwork` have their own per-plugin rate limit, and `register-music-player-artwork` a tighter one on top. |
 | `variables` | `refresh` without arguments makes the host read every declared variable of the plugin on its next poll; with `definitionIds` (at most `maxVariableRefreshDefinitionIds`) only those, declared variables and polled catalog resources a user bound alike. Requests that arrive while one is pending are merged. A host that predates it answers `CAPABILITY_UNSUPPORTED`, which the SDK treats as a no-op, and a host that predates `definitionIds` ignores them and reads every declared variable; an older host ignores catalog resource ids, which keep their refresh interval. `bind` (`bindings`: `localResourceId`, `name`, `type`, optional `decimalPlaces` and `migratedFrom`, at most `maxVariableBindingsPerCall`) records bindings from the plugin's own catalog resources to variables, owned by the calling plugin, all or nothing, and answers `outcomes`, one `bound` or `already-bound` per binding in request order; an invalid name, resource id or type answers `INVALID_PAYLOAD`, and a store that cannot be read or written `INTERNAL_ERROR`. `history.open` (`name`, `capacity`) opens a window on one of the plugin's own global variables and answers its `windowId`; a name that is not the plugin's own answers `INVALID_PAYLOAD`, and too many open windows `CAPABILITY_UNAVAILABLE`. `history.read` (`windowId`) answers the `values`, oldest first, and is not charged to the per-plugin callback throttle; `history.close` (`windowId`) closes it. A plugin's windows end with its connection. |
 | `variable-values` | Data-carrying push for the catalog half only; eager variables are always polled via `variables`/`get`. |
-| `event-bindings` | Push-only `host.state`, no `host.invoke` operations. `data` lists the triggers bound to this plugin's own events, each an `eventId` and `parameters` keyed by name (`value`, absent for a state operator, and `operator`). Sent on registration and whenever that list changes. |
+| `event-bindings` | Push-only `host.state`, no `host.invoke` operations. `data` lists the triggers bound to this plugin's own events, each an `eventId` and `parameters` keyed by name (`value`, absent for a state operator, and `operator`). Sent on registration and whenever that list changes. A session that declares the host API feature `event-bindings.resolved-value` also gets `resolvedValue`, what a `{"$var":...}` in `value` currently resolves to (absent otherwise), and a push whenever only such a resolved value changed; every other session gets neither. The .NET SDK declares the feature. |
 | `adb` | Gated per plugin, runs off the session's dispatch loop, at most 4 calls in flight per plugin - see [`adb`](#adb). |
 | `icon-packs` | `get-icon-resource` and `sync-bundled` reach the calling plugin's own bundled icon packs only, `get-icon` any installed icon by id; `sync-bundled` only from a self-registered development session - see [`icon-packs`](#icon-packs). |
 | `messaging` | Needs the `messaging` capability kind; own rate limit instead of the per-plugin callback throttle; `send` and `request` run off the session's dispatch loop - see [`messaging`](#messaging). |

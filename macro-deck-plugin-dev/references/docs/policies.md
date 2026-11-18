@@ -288,7 +288,9 @@ What did **not** need a major:
   never reports. The `ui` host API gained `report-parameter-values`, which an older host answers with
   `CAPABILITY_UNSUPPORTED` and the SDK then drops, so a reported value is not saved there. The `ui`
   capability gained `session.flush`, which a plugin built before it answers with `CAPABILITY_UNSUPPORTED`
-  and the host treats as flushed.
+  and the host treats as flushed. `MacroDeck.Plugin.Hosting` now also sends the patches every earlier
+  event produced before it answers a flush; an earlier version could answer before sending them, and the
+  host then saved without them.
 - `IVariableApi` gained `RequestRefreshAsync` and `NotifyDeclarationsChangedAsync`, both defaulting to a
   no-op, and the `variables` host API gained `refresh`; an older host makes the request a no-op.
   `NotifyDeclarationsChangedAsync` uses the existing `state.update`.
@@ -409,6 +411,13 @@ What did **not** need a major:
   `scripts.input-color`; only then does a Color script input reach it as `color`, every other plugin keeps
   receiving it as `text` with the hex value. The SDK declares it automatically. See
   [Color variables](https://docs.macro-deck.app/features/variables/#color-variables).
+- Variable references on trigger parameters added an optional `resolvedValue` to each `event-bindings`
+  parameter (`EventBindingValue.ResolvedValue`, an init property, so the two-value constructor and
+  deconstruction stay as they were) and the host API feature `event-bindings.resolved-value`, within major
+  `3`. The SDK declares the feature automatically. Only a session that declares it receives
+  `resolvedValue` and a push when only a bound variable's value changed; every other session keeps today's
+  payload and push timing, because an older SDK raises `BindingsChanged` on every push. `Value` still
+  carries the reference unresolved. See [Reading what is bound](https://docs.macro-deck.app/features/events/#reading-what-is-bound).
 - Colour variables are also a one-way step for the host's own data, which no plugin contract covers: once
   a user variable of type `Color` exists, the persisted user-variables file cannot be read by a Macro Deck
   release from before `Color`, which then starts without any user variables. Downgrading the host is
