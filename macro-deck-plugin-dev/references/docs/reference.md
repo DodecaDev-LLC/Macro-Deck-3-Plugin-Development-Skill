@@ -2356,6 +2356,8 @@ input that an approved secret-using block reads asks the user first (`steering-v
 Result: `{ triggered, queuedTriggers }`. Every action of the automations and widget triggers listening to
 the event is checked against the action policy, and payload values that an approved secret-using block
 reads ask the user first.
+A number payload value that is not finite (`NaN`, `Infinity`, or a number beyond the range of a 64-bit
+float) is refused with `VALIDATION_ERROR` and nothing is triggered.
 
 ### Action policy
 
@@ -3116,7 +3118,8 @@ cancel keeps its result, so a retry replays it instead of running twice.
 
 Message size, queue depth, concurrency, timeouts and asset sizes are published in the descriptor and
 again in the session response (`limits`, `timeouts`). Read them at runtime; do not copy the numbers into
-plugin logic. The full current table is in the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#limits-and-timeouts).
+plugin logic. The full current table is in the [WebSocket reference](https://docs.macro-deck.app/reference/websocket/#limits-and-timeouts),
+which also says how the host queues calls past `maxConcurrentInvocations`.
 A message over `maxMessageBytes` is `MALFORMED_ENVELOPE`; a payload over a specific cap (UI tree, asset)
 is `PAYLOAD_TOO_LARGE` or `ASSET_TOO_LARGE`.
 
@@ -4410,7 +4413,7 @@ All three are plugin → host and **fire-and-forget**: no reply message, unless 
 | Type | Field | Type | Required | Meaning |
 | --- | --- | --- | --- | --- |
 | `event.publish` | `eventId` | string | yes | Unqualified id; the host qualifies it with the authenticated plugin id. |
-| | `parameters` | object | no | Parameter values; a nested object or array reaches triggers and templates as its JSON text. |
+| | `parameters` | object | no | Parameter values; a nested object or array reaches triggers and templates as its JSON text. A number beyond the range of a 64-bit float, such as `1e400`, is refused (see below). |
 | `log.publish` | `events` | array of `LogEventDto` | yes | A batch of structured log events (≤ 64). |
 | | `dropped` | integer | no | Events the plugin's sink dropped since the previous batch. |
 | `state.update` | `kind` | string | yes | The kind whose snapshot is stale - re-describe it. Not data-carrying. |
@@ -4422,7 +4425,8 @@ Refusals, each a `protocol.error` correlated to the refused message:
 - `event.publish` with a number anywhere in `parameters` (nested objects and arrays included) that
   falls outside the range of a 64-bit float, such as `1e400`: `INVALID_PAYLOAD`, and the event is not
   published. JSON has no `NaN` or `Infinity` literal, so this is how an infinite value would arrive. Every
-  protocol major gets this answer; a host before Macro Deck 3.1 published the value as infinity.
+  protocol major gets this answer. A Macro Deck 3.0.3 host drops an occurrence with such a top-level number
+  without an answer and logs a warning; an earlier host published the value as infinity.
 - `log.publish` with more than 64 events: `PAYLOAD_TOO_LARGE`. The first batch over the log rate limit:
   `RATE_LIMITED`.
 - `event.publish` or `state.update` the host failed to handle: `INTERNAL_ERROR`, see
@@ -4583,6 +4587,15 @@ Advertised at runtime in the protocol descriptor and again in the session respon
 | `maxUiAttachmentsPerSession` | 16 |
 | `maxUiSessionsPerProvider` | 8 |
 | `maxUiWidgetSessionsPerProvider` | 128 |
+
+`maxConcurrentInvocations` is how many `capability.invoke` calls the host keeps outstanding to one plugin at
+a time. A call the host stopped waiting on, because its caller cancelled it or it timed out, no longer
+counts, even while your plugin is still running it. A call past the limit waits on the host for a free slot,
+within the call's own deadline, and the time it waited comes off the `deadlineMs` it is then sent with, so
+expect values below the 30 s default under load. When that deadline runs out before a slot frees, the
+host's caller gets a retryable `RATE_LIMITED` and the call is never sent. A deck that opens more of your
+tiles at once than the limit therefore reaches your plugin in turn. Hosts before 3.0.3 refused every call
+past the limit at once with `RATE_LIMITED`.
 
 `maxUiWidgetSessionsPerProvider` counts `widget` and `preview` sessions per viewer, and
 `maxUiSessionsPerProvider` counts `folder` and `screensaver` sessions per viewer and every other surface per

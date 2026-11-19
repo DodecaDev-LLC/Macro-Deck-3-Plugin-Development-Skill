@@ -123,7 +123,7 @@ error unknown-command: 'pakc' is not a macrodeck-plugin command. Did you mean 'p
 | 0 | Success, or conformant. |
 | 1 | The subject is wrong: validation failed, or a required conformance check failed. |
 | 2 | Usage error: bad arguments, an unknown `--check`/`--category` token, or an output file that already exists without `--force`. |
-| 3 | The input could not be read: a missing file, something that is not a ZIP, or a permissions failure. |
+| 3 | The input could not be read: a missing file, something that is not a ZIP or has a corrupt entry, or a permissions failure. |
 | 4 | Cancelled (Ctrl-C). |
 | 70 | An error the command did not anticipate. |
 
@@ -871,7 +871,7 @@ Like `build`, `merge` never signs: any `signature` is dropped and `files[]` is r
 | 0 | The artifact was written. |
 | 1 | A package is invalid or the packages do not belong together. |
 | 2 | Bad arguments, or an artifact that already exists without `--force`. |
-| 3 | A package could not be found or is not a ZIP archive. |
+| 3 | A package could not be found, is not a ZIP archive, or has a corrupt entry. |
 | 4 | Cancelled (Ctrl-C). |
 | 70 | Staging failed. |
 
@@ -1329,7 +1329,7 @@ on your computer. Render on the same kind of machine every time when the images 
 | 0 | Every selected preview was rendered or skipped, or the plugin declares no previews. |
 | 1 | A scenario could not be built or drawn. The other images are still written. |
 | 2 | Usage error: a bad size, scale, radius, background, theme or `--video-stream-image`, no or several subject selectors, or an unknown `--preview`. |
-| 3 | The plugin could not be launched or built, or no browser was found. |
+| 3 | The plugin could not be launched or built, an `--artifact` could not be read or has no entrypoint for this machine (`artifact-unreadable`), or no browser was found. |
 | 4 | Cancelled (Ctrl-C). |
 
 ### See also
@@ -2097,7 +2097,7 @@ exist yet.
 | `publication-metadata-missing` | A `publication`-required field is missing or blank (warning at `package`, error at `publication`). |
 | `generated-field-authored` | `files` or `signature` in a manifest that has not been built or packed yet (warning, unbuilt source tree only). |
 | `source-directory` | The manifest sits next to a project file with no built entrypoint - validate the build output instead. |
-| `not-an-artifact` | `--artifact` is not a ZIP; adds `Did you mean validate --manifest?` when the file is named `manifest.json`. |
+| `not-an-artifact` | `--artifact` is not a ZIP; adds `Did you mean validate --manifest?` when the file is named `manifest.json`. A ZIP with a corrupt entry reports `is not a readable .macroDeckPlugin artifact: an entry is corrupt (...)` under the same code. |
 | `manifest-not-found`, `artifact-not-found` | The input does not exist. |
 
 Other manifest reader failures are reported under their own kebab-case code, e.g. `entrypoint-missing`.

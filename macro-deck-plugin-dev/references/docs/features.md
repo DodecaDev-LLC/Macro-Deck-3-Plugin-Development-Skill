@@ -3457,6 +3457,10 @@ Things to know:
   `integrationId::eventId`.
 - **`Publish` is fire-and-forget.** It never throws into the caller and has no reply, so it is safe to
   call from a socket callback or polling loop. An occurrence nobody subscribed to is simply dropped.
+- **Numbers must be finite.** An occurrence whose parameters hold `NaN` or an infinity, nested values
+  included, is not published: it is dropped and a warning is logged, the first time for each event id.
+  Since Macro Deck 3.0.3 the SDK drops it instead of throwing; a plugin built with an earlier SDK
+  throws an `ArgumentException` from `Publish` until it is rebuilt.
 - **Payload keys must match the declaration.** Publish the names you listed in `PayloadParameters` -
   those are what the user can pick and filter on.
 
@@ -3750,7 +3754,8 @@ Assert.That(published.Parameters!.Value.GetProperty("sceneName").GetString(), Is
 ```
 
 `FakeEventPublisher` serializes parameters exactly as the wire protocol does, and like the real one it
-never throws. `SetBindings(...)` replaces what `GetBindings()` returns and raises
+never throws. A call whose parameters cannot be serialized, such as a non-finite number, is recorded
+with `Parameters` set to `null`; the real publisher sends nothing to the host in that case. `SetBindings(...)` replaces what `GetBindings()` returns and raises
 `BindingsChanged`, standing in for a user who binds or edits a trigger. `PluginTestHarness.Events` calls `describe` and `options` over the protocol. See
 [testing](https://docs.macro-deck.app/features/testing/).
 
@@ -4741,7 +4746,8 @@ plugin" and "filter by integration" are the same filter.
 
 | | Location |
 | --- | --- |
-| Host log files | `<data directory>/logs/host-<date>.log`, one file per day, 14 kept |
+| Host log files | `<data directory>/logs/host-<date>.log`, one file per day, kept for 14 days |
+| Host log files, size | A file that reaches 32 MB continues in `host-<date>_001.log`, `_002` and so on. At most 32 files are kept, so the folder stays at about 1 GB and a flood pushes out the oldest files first |
 | Data directory, Windows | `%APPDATA%\MacroDeck` |
 | Data directory, macOS | `~/Library/Application Support/MacroDeck` |
 | Data directory, Linux | `$XDG_DATA_HOME/MacroDeck`, or `~/.local/share/MacroDeck` |
@@ -4749,6 +4755,12 @@ plugin" and "filter by integration" are the same filter.
 | Log viewer | Developer page, **Logs** tab: every retained day, filterable by level, source and integration |
 
 Newlines inside a message are escaped, so one entry is always one header line.
+
+Log files written by a version without the size limit can be 1 GB each. The host deletes every host log
+file larger than the limit when it starts, so their entries are gone after the update.
+
+Retention counts files and their age, not sessions: a host that is started once a week keeps the files of
+the last 14 days, not its last 14 runs.
 
 ### Levels and what goes where
 
