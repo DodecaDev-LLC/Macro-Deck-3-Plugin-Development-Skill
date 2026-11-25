@@ -2039,17 +2039,18 @@ origin of the latest event, which may be a different client's by the time the wo
 - It accepts only an absolute `http` or `https` URL and throws `ArgumentException` for anything else, such
   as `javascript:`, `file:` or a relative path.
 - It reaches only the connection the event came from, not every tab or device that shares its client id.
-- That connection must have told Macro Deck it can open links. The web client and the desktop UI do;
-  hardware decks, older clients and clients that cannot open a browser do not.
+- That connection must have told Macro Deck it can open links. The web client, the desktop UI and the
+  Companion app do; hardware decks, older clients and clients that cannot open a browser do not.
 - It works only for a short time after the event, about 10 seconds, so answer the press with it rather
   than keep it for later work.
 - One event opens one link. A second call for the same press answers `false`. Calls from a plugin also
   count against its callback throttle.
 
 It answers `true` when the link was handed to the client. That does not prove a page opened: a browser may
-still block the new tab, in which case the web client offers the link to tap. It answers `false` when any
-of the conditions above does not hold, and a Macro Deck or client that predates it always answers `false`.
-Show the link some other way then, for example in one of your dialogs:
+still block the new tab, in which case the web client offers the link to tap, and a phone may have no app
+that opens it, in which case the Companion app shows the address with a button to copy it. It answers
+`false` when any of the conditions above does not hold, and a Macro Deck or client that predates it always
+answers `false`. Show the link some other way then, for example in one of your dialogs:
 
 ```csharp
 private async Task OpenArticleAsync(IUiEventOrigin origin, Uri link)
@@ -2439,7 +2440,7 @@ Properties = new UiWidgetProperties
 ```
 
 `UiWidgetAppearance.Section` builds Macro Deck's own appearance fields, already translated: background
-colour, label, label colour, accent colour, font (face, size, alignment, position) and border. Pick the groups
+colour, label, label colour, accent colour, icon colour, font (face, size, alignment, position) and border. Pick the groups
 with `UiWidgetAppearanceFields`, named after the `WidgetAppearanceProperty` values a
 [widget type declares](https://docs.macro-deck.app/ui/views/widget-types/#standard-appearance), so declare the same ones there for the
 appearance actions to reach them.
@@ -2463,6 +2464,9 @@ appearance actions to reach them.
   when your view passes that value on to its root node (see
   [widget types](https://docs.macro-deck.app/ui/views/widget-types/#standard-appearance)). `All` does not include it, and on its own it
   builds nothing.
+- The icon colour field is opt-in as well. Add `UiWidgetAppearanceFields.IconColor` for a widget that draws
+  an icon in the `iconColor` key. `All` does not include it, because it was added after `All` shipped. On a
+  Macro Deck release older than the field, its label shows as a `[[macrodeck:...]]` key.
 - Colour variables are opt-in too. Add `UiWidgetAppearanceFields.ColorVariables` and every colour field of
   the section offers the **Color** | **Variable** tabs described in
   [Offering a colour variable](#offering-a-colour-variable). `All` does not include it, and on its own it
@@ -2883,9 +2887,9 @@ new WidgetTypeDescriptor("frame", MyStrings.FrameName(), DataSchema: FrameSchema
 A widget of your type can share the appearance settings of Macro Deck's own widgets. Every type gets a
 **border**: Macro Deck draws the ring around the tile from the `border` key of the widget's stored data, and
 the Set Border action writes it, with or without a declaration. `AppearanceProperties` adds any of
-`BackgroundColor`, `Label`, `LabelColor`, `Font` and `AccentColor`. For each one you list, the widget appearance
-actions (Set Background Color, Set Label, Set Label Color, Set Label Font, Set Accent Color) accept a widget of your
-type and write the value to the stored data, under these keys:
+`BackgroundColor`, `Label`, `LabelColor`, `Font`, `AccentColor` and `IconColor`. For each one you list, the widget
+appearance actions (Set Background Color, Set Label, Set Label Color, Set Label Font, Set Accent Color, Set Icon
+Color) accept a widget of your type and write the value to the stored data, under these keys:
 
 | Key | Property | Value |
 | --- | --- | --- |
@@ -2898,6 +2902,7 @@ type and write the value to the stored data, under these keys:
 | `textAlign` | `Font` | `left`, `center` or `right` |
 | `labelPosition` | `Font` | `top`, `center` or `bottom` |
 | `accentColor` | `AccentColor` | `#rrggbb` or `#rrggbbaa` |
+| `iconColor` | `IconColor` | `#rrggbb` or `#rrggbbaa` |
 
 `UiWidgetAppearanceKeys` holds the names. Clearing a setting removes its key. Other values of
 `WidgetAppearanceProperty`, such as `Icon`, are ignored for a provider's type, and so is
@@ -2935,13 +2940,18 @@ instead of storing data your configuration could no longer save:
     "fontSize": { "type": "number" },
     "textAlign": { "type": "string" },
     "labelPosition": { "type": "string" },
-    "accentColor": { "type": "string" }
+    "accentColor": { "type": "string" },
+    "iconColor": { "type": "string" }
   }
 }
 ```
 
 The [widget configuration view](https://docs.macro-deck.app/ui/views/widget-configuration/#standard-appearance-fields) has ready-made
 fields for the same keys.
+
+`IconColor` was added after the other properties. A Macro Deck release older than it ignores the value in your
+declaration, so Set Icon Color does not offer your widgets there; on a newer release a type that already
+listed it starts receiving `iconColor`, provided its `DataSchema` allows the key.
 
 - **A background can be `transparent`.** The Set Background Color action stores whatever value it is given,
   and the configuration field offers Transparent when you opt in with
@@ -3103,7 +3113,7 @@ the host can serve a widget. A provider that ignores `sample` or `ghost` keeps b
 did.
 
 For a type that declares [standard appearance](https://docs.macro-deck.app/ui/views/widget-types/#standard-appearance),
-`UiWidgetAppearance.Read(data)` returns the background, label, colours and font the user or an action set.
+`UiWidgetAppearance.Read(data)` returns the background, label, colours (accent and icon colour included) and font the user or an action set.
 
 `UiWidgetSurface` in `MacroDeck.Ui.Widgets` reads these leniently, so a missing or malformed attribute
 reads as absent rather than throwing:
