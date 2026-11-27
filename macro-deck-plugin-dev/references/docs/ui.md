@@ -230,7 +230,7 @@ hidden one keeps and submits its value. See [Conditional content](https://docs.m
 
 | Name | Constant | Declared by | Fires | Payload |
 |---|---|---|---|---|
-| `change` | `UiComponentEvents.Change` | `ui.slider`, `ui.dial`, `ui.text-field`, `ui.toggle`, `ui.segmented` | The value the user settled on - released the drag, left the field, pressed Enter, flipped the switch, chose a segment. Always sent when an interaction ends, even if equal to the last `adjust` - except on a slider with `interaction: relative`, where an interaction that never moved the level, such as a tap, sends nothing. | The value: a number, the level fraction (slider, dial); a string (text field); a boolean, the new state, read with `TryGetBoolean` (toggle); a number, the zero-based segment index, read with `TryGetDouble` (segmented) |
+| `change` | `UiComponentEvents.Change` | `ui.slider`, `ui.dial`, `ui.text-field`, `ui.toggle`, `ui.segmented` | The value the user settled on - released the drag, left the field, pressed Enter, flipped the switch, chose a segment. Always sent when an interaction ends, even if equal to the last `adjust` - except on a slider with `interaction: relative`, where an interaction that never moved the level, such as a tap, sends nothing. A press on a hardware deck sends a slider its next level, relative or not: see [Stepping a Slider](https://docs.macro-deck.app/features/devices/#stepping-a-slider). | The value: a number, the level fraction (slider, dial); a string (text field); a boolean, the new state, read with `TryGetBoolean` (toggle); a number, the zero-based segment index, read with `TryGetDouble` (segmented) |
 | `adjust` | `UiComponentEvents.Adjust` | `ui.slider`, `ui.dial`, `ui.text-field` | Continuously while the user works the control - every drag step or keystroke. At most ten a second, never after the `change` that ended it. | Same as `change` |
 | `press` | `UiComponentEvents.Press` | `ui.button` | A press completed without being held past the long-press threshold. The primary name a reader implements first. | None |
 | `long-press` | `UiComponentEvents.LongPress` | `ui.button` | The press was still held after 600 ms. At most once per interaction, never together with `press`. | None |
@@ -584,8 +584,9 @@ new UiTextRun { Key = "temp", Text = "21°", Size = 0.14, MainSize = 0.3, Align 
 `MainSize` is a child's extent along its parent's main axis; `Fill` takes whatever the siblings leave,
 split evenly between filling children, and a child with a `MainSize` ignores `Fill`. A child with neither
 is measured without a font: an image is its `Size`, a text is its line height across the stack and
-**nothing along it**. So give every text in a row its own `MainSize` whenever a sibling fills - top
-picture without it, bottom with it.
+**nothing along it**, a slider is its `Thickness` along a vertical stack and nothing along a row. So give
+every text in a row its own `MainSize` whenever a sibling fills - top picture without it, bottom with
+it.
 
 `Size` (the font) and `MainSize` (the slot) are different properties; set both on a text in a row.
 
@@ -1258,6 +1259,7 @@ against it.
 | A Weather widget's default press runs the details action its station's provider declares through `IWeatherProvider.DetailsAction`, instead of always running the built-in Weather integration's **Weather details** action | Released after 3.0.0-beta.16 | A weather plugin built against an older SDK declares no details action, so pressing a widget that shows one of its stations runs nothing until the user adds a flow; a flow the user added still runs. See [Pressing the widget](https://docs.macro-deck.app/features/weather/#pressing-the-widget). |
 | A UI event whose payload is an explicit JSON `null` reaches an out-of-process plugin as a `Null` element in `UiEvent.Data` and `UiEventData.Raw`, instead of as no payload. A `change` with `null` therefore clears an input whose value type can be null | SDK released after 3.0.1 | A plugin rebuilt on this SDK sees the same payload a built-in integration always saw, and a cleared `UiStringInput` or `UiIconReferenceInput` keeps its cleared value. A handler that checked `Raw is null` to detect a `null` payload checks `ValueKind` instead. A plugin built on an older SDK keeps refusing such a `change` until it is rebuilt; the host sends the same bytes either way. See [Reading the payload](https://docs.macro-deck.app/ui/concepts/events/#reading-the-payload). |
 | A provider's widget type that lists `WidgetAppearanceProperty.IconColor` in `AppearanceProperties` is offered by the **Set Icon Color** action, which writes the colour to the widget's `iconColor` data key | Released after 3.1.0-beta.3 | A type that already listed the value, which older releases ignored, now gets `iconColor` written when a user runs the action on one of its widgets, provided its `DataSchema` accepts the key. A type that does not list it is unaffected. See [Standard appearance](https://docs.macro-deck.app/ui/views/widget-types/#standard-appearance). |
+| A device session's `CurrentSurface` before the host's first push, the placeholder `DeviceSurface.Empty`, has revision 0 instead of 1 | SDK released after 3.1.0-beta.3 | A device provider rebuilt on this SDK that renders `CurrentSurface` when its session opens no longer drops the host's first surface, which still has revision 1. A provider that checked for revision 1 to recognise the placeholder compares with `DeviceSurface.Empty` instead. A plugin built on an older SDK sees revision 1 there as before; every host numbers its pushes the same way. See [Receiving and rendering a session](https://docs.macro-deck.app/features/devices/#receiving-and-rendering-a-session). |
 
 ## Patches
 

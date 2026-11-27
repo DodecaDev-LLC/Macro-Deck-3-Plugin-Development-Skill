@@ -936,7 +936,7 @@ A plugin implements the same SDK contracts as an in-process integration, but the
 | Calendars | Yes | Differs | Accounts, calendars, events and single-event details work. The account list is snapshot-backed, an `events` reply carries no description or participants and is cut to a size limit, and read failures stay real failures - see [Calendars over the plugin protocol](https://docs.macro-deck.app/features/calendars/#over-the-plugin-protocol). |
 | Email inboxes | Yes | Differs | Inboxes, snapshots and `Changed` work. The inbox list is snapshot-backed, `Changed` reaches the host as a `state.update` held back 250 ms per inbox, a snapshot is cut to its field and size limits, and read failures stay real failures - see [Email inboxes over the plugin protocol](https://docs.macro-deck.app/features/email-inboxes/#over-the-plugin-protocol). |
 | Virtual profiles | Yes | Differs | Catalogs and widget interactions work; the catalog is snapshot-backed and interaction delivery is fire-and-forget. |
-| Device providers | Yes | Same | Full parity from capability version 2, but sessions are always re-opened, never resumed - see [Device provider sessions](#device-provider-sessions). |
+| Device providers | Yes | Same | Full parity from capability version 2, but sessions are always re-opened, never resumed - see [Device provider sessions](#device-provider-sessions). [Key images](https://docs.macro-deck.app/features/devices/#key-images) need capability version 3; a larger picture travels over `host.asset.*`, which the session hides. |
 | Folder view providers | Yes | Same | Registered through the `folder-views` host API; see [Provider catalogues across a disconnect](#provider-catalogues-across-a-disconnect). |
 | Screensaver providers | Yes | Same | Registered through the `screensavers` host API; see [Provider catalogues across a disconnect](#provider-catalogues-across-a-disconnect). |
 | Widget type providers | Yes | Same | Widgets of the type are drawn, previewed and configured through the provider's own `ui` sessions, one per widget per viewer, with no separate rendering path. |
@@ -2910,7 +2910,17 @@ are listed in the descriptor's `capabilityKinds`:
   more labels of an Action Button. `textAlign` and `labelPosition` keep naming the third of the box the
   label sits in, so a provider that predates the fields ignores them and draws the primary label there.
   See [Devices](https://docs.macro-deck.app/features/devices/).
+- `device-provider` capability version `3` added host-rendered key images, additively in major `3`: the
+  `layout-provider` grid's optional `keyImages`, the optional `keyImages` on `session.open`, the
+  `session.key-images` operation and the `devices` host API's `key-image`. The host sends the new operation
+  and member only to a plugin that negotiated version `3`, and a host that predates them never sends them
+  and answers `key-image` with `CAPABILITY_UNSUPPORTED`. See [Key images](https://docs.macro-deck.app/features/devices/#key-images).
 
+- The `layout-provider` grid (`LayoutGridDto`) gained the optional `maxWidgetColumns` and `maxWidgetRows`
+  (`LayoutGrid.MaxWidgetColumns`, `MaxWidgetRows`), additively in major `3` and within capability version
+  `1`: the largest widget per axis on a profile the layout's device claims. An absent value means
+  unconstrained, which is what a plugin built before them sends; a host that predates them ignores them and
+  leaves spans unconstrained. See [widget size limits](https://docs.macro-deck.app/features/layouts/#widget-size-limits).
 - `ui` `describe` gained the optional `pages`, additively in major `3` and within capability version `1`:
   the [integration pages](https://docs.macro-deck.app/ui/views/page/) the plugin declares, each with `id`, `title` and an optional
   `iconName`. The host keeps them only when `surfaces` also declares the `page` kind, and drops a page whose
@@ -3833,6 +3843,7 @@ APIs: `variables`, `user-variables`, `config`, `deck`, `scripts`, `widgets`, `no
 | `event-bindings` | Push-only `host.state`, no `host.invoke` operations. `data` lists the triggers bound to this plugin's own events, each an `eventId` and `parameters` keyed by name (`value`, absent for a state operator, and `operator`). Sent on registration and whenever that list changes. A session that declares the host API feature `event-bindings.resolved-value` also gets `resolvedValue`, what a `{"$var":...}` in `value` currently resolves to (absent otherwise), and a push whenever only such a resolved value changed; every other session gets neither. The .NET SDK declares the feature. |
 | `adb` | Gated per plugin, runs off the session's dispatch loop, at most 4 calls in flight per plugin - see [`adb`](#adb). |
 | `icon-packs` | `get-icon-resource` and `sync-bundled` reach the calling plugin's own bundled icon packs only, `get-icon` any installed icon by id; `sync-bundled` only from a self-registered development session - see [`icon-packs`](#icon-packs). |
+| `devices` | `key-image` is not charged to the per-plugin callback throttle. It has its own per-plugin budget sized by the key image cells of the plugin's open sessions, a session that is still opening included: a burst of two full repaints, refilling one full repaint per second, and grown at once when another session opens. Beyond it is `RATE_LIMITED`. |
 | `messaging` | Needs the `messaging` capability kind; own rate limit instead of the per-plugin callback throttle; `send` and `request` run off the session's dispatch loop - see [`messaging`](#messaging). |
 | `video-streams` | Only for sessions the host opened on the calling plugin's own providers; own rate limit instead of the per-plugin callback throttle - see [`video-streams`](#video-streams). |
 | `colors` | `resolve` takes `value` and an optional `widgetId` and answers `color`, absent for no colour; only Color variables resolve. `watches` replaces the plugin's whole table of `{watchId, value, widgetId?}`, at most `maxColorWatches`, and the host pushes a `host.state` for `colors` with `revision` and every watch's `{watchId, color?}` after each table change and each change of a watched colour; a push at or below the last applied `revision` is stale. A host without the api answers `CAPABILITY_UNSUPPORTED`. See [Resolving colours yourself](https://docs.macro-deck.app/features/variables/#resolving-colours-yourself). |
@@ -3906,8 +3917,9 @@ To register a resource, call `register-resource` first. On `uploadRequired`, sen
 | `interaction` | `sessionId`, `kind`, `widgetId`, `controlIndex`, `value`, `surfaceRevision`, `data` | Reports a hardware interaction; returns a `DeviceInteractionResult`. |
 | `icon` | `sessionId`, `iconId`, `size`, `knownETag` | Fetches icon bytes for the current surface; the bytes arrive over `host.asset.*`. |
 | `close` | `sessionId` | Closes an open device session at the provider's request. |
+| `key-image` | `sessionId`, `row`, `column` | Fetches the current picture of one cell of a session opened with key images: `row`, `column`, `revision`, `contentType` and either `content` (base64) or a `transferId` whose bytes arrive over `host.asset.*` with kind `key-image`. No value when the cell has no picture. |
 
-`register`, `update`, `presence`, `unregister` need no session, are keyed by provider-local `deviceId`, and are available to every `device-provider` plugin. `interaction`, `icon`, `close` are keyed by the `sessionId` from `session.open`, apply only to an opened session (capability version 2), and are the reverse of the capability's `session.open` / `session.surface` / `session.close` invokes. See [Device providers](https://docs.macro-deck.app/features/devices/).
+`register`, `update`, `presence`, `unregister` need no session, are keyed by provider-local `deviceId`, and are available to every `device-provider` plugin. `interaction`, `icon`, `close` are keyed by the `sessionId` from `session.open`, apply only to an opened session (capability version 2), and are the reverse of the capability's `session.open` / `session.surface` / `session.close` invokes. `key-image` needs capability version 3 and the reverse of it is `session.key-images`; a host that predates it answers `CAPABILITY_UNSUPPORTED`. See [Device providers](https://docs.macro-deck.app/features/devices/) and [Key images](https://docs.macro-deck.app/features/devices/#key-images).
 
 ##### `variable-values`
 

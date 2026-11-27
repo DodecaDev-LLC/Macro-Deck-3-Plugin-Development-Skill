@@ -2808,6 +2808,7 @@ private readonly ConcurrentDictionary<string, long> _lastRevisions = new(StringC
 
 public Task OnSessionOpenedAsync(IDeviceSession session, CancellationToken cancellationToken = default)
 {
+	_lastRevisions.TryRemove(session.ProviderDeviceId, out _);
 	session.SurfaceChanged += (_, e) => Render(session.ProviderDeviceId, e.Surface);
 	session.Closed += (_, e) => StopRendering(session.ProviderDeviceId);
 
@@ -2834,13 +2835,20 @@ private void Render(string serial, DeviceSurface surface)
 ```
 
 The host calls `OnSessionOpenedAsync` once per registered device. Leave it at its default no-op and the
-device stays registration-only forever.
+device stays registration-only forever. The host never waits for it while handling one of your own calls,
+so the handler can call back into the host (icons, key images) before it returns.
 
 - **Every surface is a complete snapshot** - profile, folder, effective layout, every widget - never a diff.
-  `CurrentSurface` is the first one; there is no separate "initial" event.
-- **`Revision` starts at 1 and increases within this session only.** A reconnect opens a fresh session with
-  a new sequence and a full snapshot. Drop any surface whose revision is not strictly greater than the last
-  one you applied - it is your only out-of-order signal. Never persist a revision.
+  There is no separate "initial" event: the host's first push arrives through `SurfaceChanged` after
+  `OnSessionOpenedAsync` returns, and only while the device is online. Until then `CurrentSurface` is the
+  placeholder `DeviceSurface.Empty`, with no widgets and revision 0.
+- **`Revision` starts at 1 with the first push and increases within this session only.** The placeholder's 0
+  is below every pushed surface, so rendering `CurrentSurface` at open never makes you drop the first real
+  one. A reconnect opens a fresh session with a new sequence and a full snapshot, so start your last applied
+  revision over for each session, as the example does. Drop any surface whose revision is not strictly
+  greater than the last one you applied - it is your only out-of-order signal. Never persist a revision.
+  SDK packages up to 3.1.0-beta.3 give the placeholder revision 1, the same as the first push: on those,
+  start the drop rule at 0 instead of at the surface you read in `OnSessionOpenedAsync`.
 - **`Layout` is already resolved:** rows, columns, spacing and border radius come from the folder, then its
   ancestors, then the profile defaults; the background is the folder's own or the profile default.
 - **No reflow, clipping or validation.** A 3x2 device given a 5x3 profile gets the full 5x3 grid, positions
@@ -2898,7 +2906,7 @@ stays open, the next press works:
 
 | Result | Meaning |
 | --- | --- |
-| `Accepted` | The host took it. For a `ShortPress` or `LongPress` on a tile a plugin or integration serves, it can mean *queued*: see below. |
+| `Accepted` | The host took it. For a `ShortPress` or `LongPress` on a tile a plugin or integration serves, or on a Slider, it can mean *queued*: see below. On a Slider it does not mean a value was written. |
 | `Rejected` + `WidgetNotOnSurface` | The press raced a surface push. Re-render the newest surface. |
 | `Rejected` + `HostLocked` | The host is locked and runs nothing until unlocked. |
 | `Rejected` + `TriggerFailed` | The widget was edited or deleted between push and press. |
@@ -2945,11 +2953,49 @@ press and waits at most a second for it; a tree that does not answer in time abs
 tree may arrive over the same connection your report came in on, the host never holds your report for it:
 `Press` and `Release` return at once as always, and a `ShortPress` or `LongPress` whose tree has not answered
 yet is answered `Accepted` and runs afterwards, so a failure of that flow no longer comes back as
-`Rejected` + `TriggerFailed`. Built-in tiles keep the full verdict.
+`Rejected` + `TriggerFailed`. Built-in tiles other than the [Slider](#stepping-a-slider) keep the full verdict.
+
+When the control that claims the press is a `ui.slider` declaring `change`, the press steps it exactly as it
+[steps a Slider](#stepping-a-slider). Such a tile advertises only the kinds its flows give it, so a provider
+that sends advertised kinds only never steps it.
 
 Press state is tracked **per widget**: releasing one widget never ends another's press, and a second
 `Press` for a widget already held is ignored (no timer restart, no second `onTouchStart`). If your hardware
 already tells short from long, send `ShortPress`/`LongPress` instead of a `Press`/`Release` pair.
+
+#### Stepping a Slider
+
+A key has no analog input, so a short press on the built-in Slider moves it one step further, and a press at
+the top wraps it back to the start. The host does the stepping: send an ordinary `ShortPress`, or a
+`Press`/`Release` pair, and the Slider writes its variable as if the user had dragged it there. A Slider
+always advertises `Press`, `Release` and `ShortPress`, whatever flows it carries. A host that predates this
+advertises nothing for a Slider and a press there changes nothing, so a provider that follows
+`SupportedInteractions` works against both.
+
+The step is measured on the Slider's track, from `0` at its minimum to `1` at its maximum, using the level
+and step the Slider's own [`ui.slider`](https://docs.macro-deck.app/ui/components/slider/) node carries:
+
+- **Press step:** the node's step when it is at least `0.1`. A smaller step is multiplied by the smallest
+  whole number that makes it at least `0.1`, so a `0..100` Slider with step `1` moves in tens and stays on
+  its own grid. Without a usable step the press step is `0.1`.
+- **Next level:** the current level plus the press step, capped at `1`, then snapped to the node's step and
+  clamped to `0..1`. A `0..100` Slider with step `1` at `95` goes to `100`, not back to `0`.
+- **Wrap:** at the top the next press goes to `0`. The top is `1`, or the last level the step grid reaches
+  below it, such as `0.9` for a step of `0.3`, so a press never skips a top the Slider can show.
+
+A few consequences for a provider:
+
+- **Short presses only.** A `Press` held past the long-press threshold is a long press and moves nothing;
+  `LongPress` is not advertised. Double taps are not recognised: each tap steps, and a Slider's Double Tap
+  action and any press flows it carries do not run from a hardware deck.
+- **The verdict.** The press is answered like one on a plugin tile (see above): `Accepted` can mean
+  *queued*, and it does not mean the value was written: a variable that cannot be written or a range that is
+  not usable refuses the change inside the Slider without a `Rejected`. A locked host still answers
+  `Rejected` + `HostLocked`.
+- **Each press reads the value the variable has.** Two presses in quick succession can land on the same
+  level when the variable has not reported the first write yet. A variable that is unavailable reads as
+  its minimum, so a press then steps from there.
+- **The key does not show the level.** The surface carries the Slider's label and colours, not its value.
 
 ### Fetching icons
 
@@ -3000,6 +3046,113 @@ channel). It returns null rather than throwing when the provider went inactive, 
 widget is not on the current surface. It is default-implemented to return null, and a provider built
 before `HasProviderIcon` existed simply renders label and colour, as for an icon-less widget.
 
+### Key images
+
+A deck of display keys does not have to draw the surface itself. Declare `KeyImages` on the layout's grid
+and Macro Deck renders every key - widget, label, icon, border, background - into a finished picture
+in the size and encoding the hardware takes, and sends you one picture per key.
+
+```csharp
+new LayoutGrid
+{
+	Rows = 3,
+	Columns = 5,
+	KeySize = new LayoutKeySize(72, 72),
+	KeyImages = new LayoutKeyImageFormat { Encoding = KeyImageEncodings.Jpeg, Rotation = 180 }
+}
+```
+
+```csharp
+public async Task OnSessionOpenedAsync(IDeviceSession session, CancellationToken cancellationToken = default)
+{
+	if (session.KeyImageFormat is null)
+	{
+		session.SurfaceChanged += (_, e) => Render(session.ProviderDeviceId, e.Surface);
+		return;
+	}
+
+	var pad = _watcher.Pad(session.ProviderDeviceId);
+	session.KeyImageChanged += (_, e) => pad.WriteKey(e.Image.Row, e.Image.Column, e.Image.Content);
+
+	for (var row = 0; row < pad.Rows; row++)
+	{
+		for (var column = 0; column < pad.Columns; column++)
+		{
+			if (await session.GetKeyImageAsync(row, column, cancellationToken) is { } image)
+			{
+				pad.WriteKey(row, column, image.Content);
+			}
+		}
+	}
+}
+```
+
+- **Opt-in, per layout.** `LayoutGrid.KeyImages` is null by default, and the device then gets surfaces
+  only, as before. It needs `KeySize`, which is the size of every delivered picture. A format Macro Deck
+  cannot honour - no `KeySize`, a rotation other than 0, 90, 180 or 270, an unknown encoding - means no key
+  images for that layout and a warning in the host log, never a failed registration.
+- **`IDeviceSession.KeyImageFormat` is the signal.** It is the format the host renders this session in,
+  fixed for the life of the session (a layout change takes effect when the session reopens). It is null
+  when the layout asks for no pictures, the format cannot be honoured, or the host predates key images,
+  so a provider built for both checks it and falls back to rendering `CurrentSurface`.
+- **Encodings** are `KeyImageEncodings` values, and each picture's `ContentType` is the matching
+  `KeyImageContentTypes` value:
+
+  | Encoding | Content type | Bytes |
+  | --- | --- | --- |
+  | `rgba` | `application/x-macrodeck-rgba` | 8-bit RGBA, top row first, `width * 4` bytes per row with no padding, always opaque |
+  | `png` | `image/png` | PNG |
+  | `jpeg` | `image/jpeg` | baseline JPEG, quality 90 |
+  | `bmp` | `image/bmp` | 24-bit BMP, rows bottom-up |
+
+- **Orientation:** the key is mirrored left to right first when `MirrorHorizontal` is set, then rotated
+  clockwise by `Rotation`. For 90 and 270 it is rendered at the swapped size, so the delivered picture is
+  always `KeySize`.
+- **Cells are the hardware grid**: `Row` and `Column` count from 0 at the top left over the layout's
+  single grid region, rows x columns. Every cell has a picture, an empty key included, and a key the
+  current folder does not reach (a smaller folder, no profile assigned) is drawn as background. A widget
+  outside the hardware grid is not rendered. A layout with no grid region, or several, gets no key images.
+- **First paint:** `GetKeyImageAsync` answers for every cell from the moment the session exists, inside
+  `OnSessionOpenedAsync` included, so a device can paint all keys on connect instead of waiting for changes. It returns null for a session without key
+  images, for a cell outside the grid, and on a host that does not serve key images - never an exception.
+- **Fetch budget:** fetching every cell at once, sequentially or with `Task.WhenAll`, never counts
+  against your plugin's general callback budget. Key image fetches have a budget of their own, sized by
+  the cells of every key image session your plugin holds: about two full repaints at once, refilling one
+  full repaint per second, and a session that opens adds its cells right away. Beyond it a fetch is refused
+  with `RATE_LIMITED`; after the first paint, rely on `KeyImageChanged` instead of fetching again.
+- **Changes:** `KeyImageChanged` carries one cell's new picture, never for a picture that did not change.
+  A change Macro Deck rebuilds the surface for (an edit, a widget's state or label, a navigation) has its
+  pictures raised after that rebuild: after its `SurfaceChanged`, or right after the host found the surface
+  unchanged. A change only the picture shows (a clock tick, live widget content) is raised on its own,
+  with no surface; a clock on one key updates that key only.
+  `Revision` is per cell, starts at 1 and increases with every change; drop a picture whose revision is not
+  greater than the last one you applied for that cell. A session already drops those before it raises the
+  event, counting the pictures `GetKeyImageAsync` handed you.
+- **Rate:** Macro Deck caps updates at the layout's `Visuals.MaxUpdatesPerSecond`, or 30 per second when
+  that is unset.
+- **What the visual capabilities change:** with `AnimatedIcons` false a key shows the icon's first frame;
+  with `Borders` false no border ring is drawn; corners are rounded only when `CornerRadius` is true and
+  keys of a widget spanning several cells are separated by the profile's spacing only when `WidgetSpacing`
+  is true.
+- **What a key is drawn in:** the host's theme (light draws light, dark and system draw dark, since a
+  device has no colour scheme of its own), accent colour, app font and language. Changing any of them, or
+  importing or removing a font, draws every key again; only the keys that look different are sent. An
+  empty cell takes the folder's empty-cell style, so a transparent one is drawn as background.
+- **Widget content:** Macro Deck follows each widget's view the way a client does, one view session per
+  widget on the keys, so a widget's provider sees one more viewer. A key waits up to one second for its
+  widget's first view; past that it is drawn without the content and updated when the view arrives.
+- **Offline devices:** while a device is offline nothing is sent to it, and `GetKeyImageAsync` still
+  answers with the last picture drawn for each key; a clock is not redrawn while the device is away.
+  When it comes back, every key is drawn again and sent with a new revision, after the surface.
+- **Only the widget grid is rendered.** A folder view cannot be drawn onto keys, so declare
+  `CustomFolderViews = false` on a key-image layout; the editor then does not offer one for it.
+- **Interactions do not change.** Keep reporting presses with the widget ids of `CurrentSurface`, which
+  still arrives as before; the picture of a key and the widget at that position come from the same
+  surface.
+
+A plugin receives the pictures over `session.key-images` (inline, or over `host.asset.*` when one is too
+large for a message) and fetches a cell with the `devices` host API's `key-image`; the session hides both.
+
 ### Ending a session
 
 ```csharp
@@ -3020,6 +3173,11 @@ or withdraw a device in another plugin's name.
 Sessions need `device-provider` **capability version 2**. The host opens a session only when the negotiated
 version is 2 or higher; a plugin that negotiates version 1 keeps registering, updating and unregistering
 as before and is never sent a session operation - it degrades to registration only.
+
+[Key images](#key-images) need **capability version 3**, which `MacroDeck.Plugin.Hosting` declares from the
+SDK version that added them. A plugin that negotiated version 2 is never sent `session.key-images` and
+never gets a key-image format on `session.open`: it keeps rendering surfaces. A plugin built against a
+newer SDK on an older host sees `KeyImageFormat` null and `GetKeyImageAsync` return null.
 
 ### Testing
 
@@ -3064,22 +3222,32 @@ unregistering retains it and only takes it offline. Assert on `Devices`, `IsOnli
 `PushSurface` and `Close`, script the verdict with `NextResult`, and seed `Icons` / `WidgetIcons`; read back
 `Interactions`, `IconRequests` and `WidgetIconRequests`.
 
+For [key images](#key-images), set `FakeDeviceProviderContext.KeyImageFormat` before `OpenSession` (or
+`FakeDeviceSession.KeyImageFormat` before the provider reads it), push pictures with `PushKeyImage`, which
+raises `KeyImageChanged`, and seed `KeyImages` for the answers `GetKeyImageAsync` gives; read back
+`KeyImageRequests`. The fake drops nothing, so a test can push a stale revision and check that your
+provider ignores it.
+
 Against a real plugin process, the harness's `DeviceProvider` client (`PluginTestHarness`,
-`PluginSessionView`) invokes `describe`, `devices`, `session.open`, `session.surface` and `session.close`.
+`PluginSessionView`) invokes `describe`, `devices`, `session.open`, `session.surface`, `session.key-images`
+(`PushKeyImagesAsync`) and `session.close`. Pass a `DeviceSessionOpenArguments` with `KeyImages` set to
+`OpenSessionAsync` to open a session the way a host that renders key images does.
 See [Testing](https://docs.macro-deck.app/features/testing/).
 
 ### Over the plugin protocol
 
 The host-to-provider direction of the `device-provider` capability describes the provider, re-reads its
-catalogue after a reconnect and, from capability version 2, drives rendering sessions:
+catalogue after a reconnect, from capability version 2 drives rendering sessions and from version 3
+delivers key images:
 
 | Operation | Purpose |
 | --- | --- |
 | `describe` | The provider's declared name and capability version. |
 | `devices` | The provider's current device catalogue, re-read after a reconnect. |
-| `session.open` | Opens a device's session and hands over the first surface to render. Version 2 only. |
+| `session.open` | Opens a device's session and hands over the first surface to render; carries the key-image format when the host renders pictures for the session. Version 2 only. |
 | `session.surface` | Pushes a new, complete surface to an already-open session. Version 2 only. |
 | `session.close` | Closes an open session. Version 2 only. |
+| `session.key-images` | Pushes changed key pictures, several cells per message, each inline or over `host.asset.*`. Version 3 only, and only to a session opened with a key-image format. |
 
 Registration, interactions and icon fetches travel the other way as the `devices` host API:
 
@@ -3093,6 +3261,7 @@ Registration, interactions and icon fetches travel the other way as the `devices
 | `icon` | Fetches icon bytes referenced by a device's current surface, over the `host.asset.*` pipeline. |
 | `widget-icon` | Fetches the bytes behind a widget's currently rendered action-icon-provider icon, over the `host.asset.*` pipeline. |
 | `close` | Closes an open device session at the provider's own request. |
+| `key-image` | Fetches the current picture of one cell of a session with key images, inline or over the `host.asset.*` pipeline; no value when there is none. |
 
 ### See also
 
@@ -4181,6 +4350,8 @@ Only `grid` carries geometry, in `LayoutRegion.Grid`. Every other kind is a `Cou
 | `MinRows`, `MaxRows`, `MinColumns`, `MaxColumns` | Per-axis bounds for a configurable grid. Default 1. |
 | `SupportsRuntimeResize` | A resize applies live. When `false`, you may apply it when the device next connects. |
 | `KeySize` | Pixel size of one key, where the hardware has a fixed one. |
+| `KeyImages` | Asks Macro Deck to render a finished picture for every key of this grid, in this `LayoutKeyImageFormat` (encoding, rotation, mirroring), at `KeySize`. Null (default) sends surfaces only. See [Key images](https://docs.macro-deck.app/features/devices/#key-images). |
+| `MaxWidgetColumns`, `MaxWidgetRows` | The largest widget, per axis, on a profile this layout's device claims. `null` (default) leaves the axis unconstrained; a value below 1 reads as 1. See [widget size limits](#widget-size-limits). |
 | `RowsLocked`, `ColumnsLocked` | Derived: fixed, or configurable with min >= max on that axis. |
 
 `LayoutDescriptor.PrimaryGrid` is the one grid Macro Deck renders a deck onto, computed for you. It is null
@@ -4202,13 +4373,28 @@ Capabilities: new LayoutCapabilities
 | --- | --- |
 | `StaticIcons`, `AnimatedIcons`, `Borders`, `BackgroundColors`, `TextLabels`, `Transparency` | What the surface can draw. |
 | `WidgetSpacing`, `CornerRadius` | Whether the folder's spacing and corner radius mean anything here. `false` disables those editor controls with a note that they have no effect on this device. |
-| `CustomFolderViews` | Whether the surface can show a [folder view](https://docs.macro-deck.app/ui/views/folder-views/) at all. `false` means the choice is not offered for a profile its device claims. Set it on a software client or full display. |
-| `MaxUpdatesPerSecond` | Advisory update rate. |
+| `CustomFolderViews` | Whether the surface can show a [folder view](https://docs.macro-deck.app/ui/views/folder-views/) at all. `false` means the choice is not offered for a profile its device claims. Set it on a software client or full display, and leave it `false` on a grid with `KeyImages`. |
+| `ScreenSavers` | Whether the device takes part in [screensavers](https://docs.macro-deck.app/ui/views/screensavers/#devices-that-show-no-screensaver). Nullable: `false` says it cannot, `null` (the default) and `true` keep Macro Deck's default. Set it to `false` for hardware made of separate key displays. |
+| `MaxUpdatesPerSecond` | Advisory update rate. Macro Deck caps [key images](https://docs.macro-deck.app/features/devices/#key-images) at it, 30 per second when unset. |
 
-`LayoutVisualCapabilities.Full` sets every flag. A `Visuals` block that sets nothing reads as "renders
-nothing". **No `Visuals` block at all** keeps the spacing controls and the folder-view option - saying
+`LayoutVisualCapabilities.Full` sets every flag, `ScreenSavers = true` included. A `Visuals` block that
+sets nothing reads as "renders nothing", except for `ScreenSavers`, which stays `null` and so keeps the
+default. **No `Visuals` block at all** keeps the spacing controls and the folder-view option - saying
 nothing is not saying no. A region can override with its own `LayoutRegion.Visuals`; null inherits the
-layout's.
+layout's. `ScreenSavers` is read flag by flag: the primary grid region's value, and where that is `null`
+the layout-wide one. A layout with several grid regions has no primary grid, so declare it on
+`LayoutCapabilities.Visuals` there.
+
+```csharp
+// A Stream Deck: a grid of separate key displays that cannot show a screensaver.
+Capabilities: new LayoutCapabilities
+{
+	Visuals = new LayoutVisualCapabilities
+	{
+		StaticIcons = true, AnimatedIcons = true, Borders = true, ScreenSavers = false
+	}
+}
+```
 
 ### Associating a layout with a device provider
 
@@ -4233,6 +4419,36 @@ its profile stays unconstrained until that layout appears.
 Macro Deck constrains a profile; it never rewrites one. No reflow, pagination, resizing or dropped widgets:
 a profile bigger than the device simply shows partially, as a [device session](https://docs.macro-deck.app/features/devices/#receiving-and-rendering-a-session)
 does.
+
+#### Widget size limits
+
+Hardware whose keys are separate displays, like a Stream Deck, cannot draw one widget across the gaps
+between keys. Keep every widget to one key:
+
+```csharp
+new LayoutGrid
+{
+	Rows = 3,
+	Columns = 5,
+	KeySize = new LayoutKeySize(72, 72),
+	MaxWidgetColumns = 1,
+	MaxWidgetRows = 1
+}
+```
+
+For a profile its device claims:
+
+- The editor stops a resize at the limit. At a 1 x 1 limit the resize handle of a single-key widget is
+  locked, with a note naming the device.
+- Macro Deck refuses an edit that creates a widget larger than the limit or grows one past it: a resize,
+  a new widget, a paste. Agents using [MCP](https://docs.macro-deck.app/reference/mcp/) get the same refusal.
+- With several claiming devices, the smallest limit per axis applies, whatever their grids. The note names
+  the device each limit comes from.
+- Existing content is never rewritten. A widget that is already larger stays as stored, is still delivered
+  to the device at its stored size, can be moved, edited or shrunk, and shows a warning naming the device.
+  Importing a widget or folder archive and duplicating a folder copy widgets as they are, without a check.
+
+A plugin built before these members, or a layout that leaves them `null`, behaves as before.
 
 The host persists the last resolved layout with the device, not just the reference. `UnregisterLayoutAsync`
 and a stopped provider behave the same: the reference is kept, the grid stays constrained, and it refreshes

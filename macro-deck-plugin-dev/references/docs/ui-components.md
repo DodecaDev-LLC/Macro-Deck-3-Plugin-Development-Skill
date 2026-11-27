@@ -2517,7 +2517,7 @@ A reader without `ui.slider` draws the fallback, here the same level as a read-o
 | Event | Fires when | Payload |
 |---|---|---|
 | `adjust` (`UiComponentEvents.Adjust`) | An intermediate level while the user is still working the control | The level, a bare number |
-| `change` (`UiComponentEvents.Change`) | The interaction ended, sent once - not for a relative tap, see [Reader behaviour](#reader-behaviour) | The level, a bare number |
+| `change` (`UiComponentEvents.Change`) | The interaction ended, sent once - not for a relative tap, see [Reader behaviour](#reader-behaviour). Also sent by a press on a hardware deck | The level, a bare number |
 | `double-press` (`UiComponentEvents.DoublePress`) | A second tap completed shortly after the first, neither one a drag | None |
 
 Declare `double-press` for an action on a double tap, such as resetting to a home level. Each tap is still an
@@ -2532,9 +2532,11 @@ None. `ui.slider` is a leaf.
 
 ### Layout
 
-The element's whole box is the interactive surface; the drawn track is smaller. `Thickness` sizes only the
-drawn track, not the element. On its parent's main axis the slider follows the ordinary rule - `MainSize`
-or `Fill` if declared, otherwise its content extent. See [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/).
+The element's whole box is the interactive surface; the drawn track is smaller. `Thickness` sizes the
+drawn track. On its parent's main axis the slider follows the ordinary rule - `MainSize` or `Fill` if
+declared, otherwise its content extent: its `Thickness` along a vertical stack and nothing along a row.
+A slider with neither in a vertical stack is therefore exactly as tall as its track, and its thumb
+overlaps the space around it. See [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/).
 
 ### Reader behaviour
 
@@ -2559,6 +2561,11 @@ or `Fill` if declared, otherwise its content extent. See [Sizing](https://docs.m
   every move so reversing at an end moves back at once. `step` snaps as usual, and the level counts as moved
   only once that snapped level differs from the snapped level at the press. An interaction whose level never
   moved sends neither `adjust` nor `change`; one that moved sends `change` even if it ended where it began.
+- **Hardware press:** when the first interactive node of a tile on a hardware deck is a slider declaring
+  `change`, a short press there sends `change` with the next level, relative or not, and a press at the top
+  sends `0`. The press step and the wrap are described under
+  [Stepping a Slider](https://docs.macro-deck.app/features/devices/#stepping-a-slider). Keyboard and deck-input activation in the
+  Macro Deck clients leaves a slider alone.
 - **Geometry is normative:** the track and thumb are implemented exactly; the fixtures in
   `ui-model/fixtures/component-profile/` resolve both at two sizes.
 
@@ -2938,7 +2945,8 @@ main-axis extent. See [Sizing](https://docs.macro-deck.app/ui/concepts/sizing/).
 >
 > A single run of text, sized as a fraction of the view basis.
 
-A single run of text, laid out with a line height of exactly one, so its box is exactly its font size.
+A single run of text, laid out with a line height of exactly one, so its box is exactly its font size, or
+nothing when it has no text.
 
 `ui.text`
 
@@ -3122,8 +3130,9 @@ None. `ui.text` is a leaf.
 ### Layout
 
 The cross-axis extent is always the line height - exactly the resolved `size` - whatever the parent
-offers. Along the main axis a text takes `mainSize` or `fill` if declared, otherwise the reader's own
-measurement.
+offers, except for a text with no `spans` whose `text` is absent or empty: it lays out no line at all, so
+nothing is reserved for it. Along the main axis a text takes `mainSize` or `fill` if declared, otherwise
+the reader's own measurement.
 
 Measured without a font, a text with neither `mainSize` nor `fill` takes **nothing** along the main axis.
 So when a sibling fills a row, give every text in that row its own `mainSize`, or the filling sibling
